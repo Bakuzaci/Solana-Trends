@@ -1,0 +1,269 @@
+"""
+Token categorization service using fuzzy string matching.
+
+Categorizes Solana meme coins based on name/symbol patterns
+using rapidfuzz for fuzzy matching.
+"""
+from typing import Dict, List, Optional, Tuple
+from rapidfuzz import fuzz, process
+
+
+# =============================================================================
+# Trend Categories Dictionary
+# =============================================================================
+
+TREND_CATEGORIES: Dict[str, Dict[str, List[str]]] = {
+    # Animals & Creatures
+    "Animals": {
+        "Dogs": [
+            "dog", "doge", "shiba", "inu", "puppy", "pup", "woof", "bark",
+            "corgi", "bulldog", "poodle", "husky", "retriever", "chihuahua"
+        ],
+        "Cats": [
+            "cat", "kitty", "kitten", "meow", "feline", "whiskers", "tabby",
+            "persian", "siamese", "nyan"
+        ],
+        "Frogs": [
+            "frog", "pepe", "toad", "ribbit", "kermit", "tadpole", "amphibian"
+        ],
+        "Monkeys": [
+            "monkey", "ape", "chimp", "gorilla", "banana", "primate", "orangutan",
+            "baboon", "macaque"
+        ],
+        "Birds": [
+            "bird", "eagle", "owl", "crow", "raven", "penguin", "parrot",
+            "hawk", "falcon", "tweet", "chirp"
+        ],
+        "Other Animals": [
+            "bear", "bull", "lion", "tiger", "wolf", "fox", "rabbit", "bunny",
+            "elephant", "whale", "shark", "fish", "dragon", "unicorn", "pig",
+            "hamster", "rat", "mouse", "snake", "lizard", "turtle"
+        ],
+    },
+
+    # Meme Culture
+    "Meme Culture": {
+        "Classic Memes": [
+            "pepe", "wojak", "chad", "virgin", "doge", "nyan", "troll",
+            "stonks", "hodl", "rekt", "fomo", "fud", "ngmi", "gmi", "wagmi"
+        ],
+        "Internet Culture": [
+            "based", "cringe", "cope", "seethe", "ratio", "sus", "mid",
+            "bussin", "cap", "nocap", "simp", "stan", "yeet", "vibe"
+        ],
+        "Emoji Culture": [
+            "moon", "rocket", "fire", "100", "diamond", "hands", "gem",
+            "crown", "skull", "clown", "brain"
+        ],
+    },
+
+    # Pop Culture
+    "Pop Culture": {
+        "Celebrities": [
+            "elon", "musk", "trump", "biden", "kanye", "drake", "snoop",
+            "rihanna", "taylor", "swift", "kardashian", "bieber"
+        ],
+        "Movies & TV": [
+            "marvel", "disney", "star", "wars", "trek", "matrix", "batman",
+            "superman", "joker", "thanos", "avengers", "game", "thrones"
+        ],
+        "Anime": [
+            "anime", "manga", "waifu", "senpai", "kawaii", "otaku", "naruto",
+            "goku", "dbz", "pokemon", "pikachu", "sailor"
+        ],
+        "Gaming": [
+            "game", "gamer", "xbox", "playstation", "nintendo", "mario",
+            "zelda", "minecraft", "fortnite", "roblox", "esports", "twitch"
+        ],
+    },
+
+    # Finance & Crypto
+    "Finance": {
+        "Trading": [
+            "pump", "dump", "moon", "lambo", "hodl", "whale", "dip", "ath",
+            "bull", "bear", "short", "long", "leverage", "margin"
+        ],
+        "DeFi": [
+            "defi", "yield", "farm", "stake", "swap", "liquidity", "pool",
+            "apy", "apr", "vault", "protocol"
+        ],
+        "Crypto Culture": [
+            "bitcoin", "btc", "eth", "sol", "crypto", "blockchain", "nft",
+            "web3", "metaverse", "dao", "token"
+        ],
+    },
+
+    # Tech & AI
+    "Technology": {
+        "AI & Bots": [
+            "ai", "gpt", "bot", "robot", "neural", "machine", "learning",
+            "chat", "assistant", "agent", "llm", "openai", "claude", "gemini"
+        ],
+        "Tech Companies": [
+            "apple", "google", "meta", "microsoft", "amazon", "tesla",
+            "nvidia", "amd", "intel"
+        ],
+        "Futurism": [
+            "cyber", "quantum", "nano", "space", "mars", "rocket", "future",
+            "virtual", "digital", "matrix"
+        ],
+    },
+
+    # Food & Lifestyle
+    "Food & Lifestyle": {
+        "Food": [
+            "pizza", "burger", "taco", "sushi", "ramen", "bacon", "cheese",
+            "coffee", "beer", "wine", "whiskey", "chocolate", "cookie"
+        ],
+        "Lifestyle": [
+            "rich", "luxury", "gold", "diamond", "yacht", "lambo", "ferrari",
+            "rolex", "gucci", "supreme"
+        ],
+    },
+
+    # Politics & Society
+    "Politics": {
+        "Political": [
+            "trump", "biden", "maga", "democrat", "republican", "liberal",
+            "conservative", "freedom", "liberty", "patriot"
+        ],
+        "Social Issues": [
+            "green", "climate", "peace", "love", "unity", "equality",
+            "justice", "community"
+        ],
+    },
+
+    # Miscellaneous
+    "Miscellaneous": {
+        "Numbers & Symbols": [
+            "420", "69", "100", "1000x", "10x", "infinite", "zero", "one",
+            "million", "billion", "trillion"
+        ],
+        "Abstract": [
+            "moon", "sun", "star", "cosmic", "galaxy", "universe", "infinite",
+            "eternal", "genesis", "alpha", "omega", "prime"
+        ],
+        "Random": [
+            "yolo", "lol", "wtf", "omg", "bruh", "bro", "dude", "guy",
+            "thing", "stuff", "random"
+        ],
+    },
+}
+
+
+# Flatten categories for quick keyword lookup
+def _build_keyword_index() -> Dict[str, Tuple[str, str]]:
+    """Build a reverse index from keywords to categories."""
+    index = {}
+    for primary_cat, sub_cats in TREND_CATEGORIES.items():
+        for sub_cat, keywords in sub_cats.items():
+            for keyword in keywords:
+                # Store the first match for each keyword
+                if keyword.lower() not in index:
+                    index[keyword.lower()] = (primary_cat, sub_cat)
+    return index
+
+
+KEYWORD_INDEX = _build_keyword_index()
+
+# Flatten all keywords for fuzzy matching
+ALL_KEYWORDS = list(KEYWORD_INDEX.keys())
+
+
+def categorize_token(
+    name: str,
+    symbol: str,
+    confidence_threshold: int = 75
+) -> Tuple[Optional[str], Optional[str], List[str]]:
+    """
+    Categorize a token based on its name and symbol.
+
+    Uses fuzzy string matching with rapidfuzz to find the best
+    matching category based on predefined keywords.
+
+    Args:
+        name: Token name
+        symbol: Token symbol
+        confidence_threshold: Minimum confidence score (0-100) for a match.
+                            Default is 75.
+
+    Returns:
+        Tuple of (primary_category, sub_category, detected_keywords)
+        Returns (None, None, []) if no match found above threshold.
+    """
+    # Combine name and symbol for matching
+    combined_text = f"{name} {symbol}".lower()
+
+    # Track all matches with their scores
+    detected_keywords = []
+    best_match: Optional[Tuple[str, str, int]] = None
+
+    # First, try exact substring matching
+    for keyword, (primary_cat, sub_cat) in KEYWORD_INDEX.items():
+        if keyword in combined_text:
+            detected_keywords.append(keyword)
+            # Exact matches get 100 confidence
+            if best_match is None or 100 > best_match[2]:
+                best_match = (primary_cat, sub_cat, 100)
+
+    # If no exact matches, try fuzzy matching
+    if not detected_keywords:
+        # Use rapidfuzz to find similar keywords
+        matches = process.extract(
+            combined_text,
+            ALL_KEYWORDS,
+            scorer=fuzz.partial_ratio,
+            limit=5,
+        )
+
+        for match_keyword, score, _ in matches:
+            if score >= confidence_threshold:
+                detected_keywords.append(match_keyword)
+                primary_cat, sub_cat = KEYWORD_INDEX[match_keyword]
+                if best_match is None or score > best_match[2]:
+                    best_match = (primary_cat, sub_cat, score)
+
+    if best_match and best_match[2] >= confidence_threshold:
+        return best_match[0], best_match[1], detected_keywords
+
+    return None, None, detected_keywords
+
+
+def get_all_categories() -> Dict[str, List[str]]:
+    """
+    Get all available categories and their sub-categories.
+
+    Returns:
+        Dictionary mapping primary categories to lists of sub-categories.
+    """
+    return {
+        primary: list(subs.keys())
+        for primary, subs in TREND_CATEGORIES.items()
+    }
+
+
+def get_keywords_for_category(
+    primary_category: str,
+    sub_category: Optional[str] = None
+) -> List[str]:
+    """
+    Get all keywords for a specific category.
+
+    Args:
+        primary_category: The primary category name
+        sub_category: Optional sub-category name
+
+    Returns:
+        List of keywords for the specified category
+    """
+    if primary_category not in TREND_CATEGORIES:
+        return []
+
+    if sub_category:
+        return TREND_CATEGORIES[primary_category].get(sub_category, [])
+
+    # Return all keywords for the primary category
+    all_keywords = []
+    for sub_cat_keywords in TREND_CATEGORIES[primary_category].values():
+        all_keywords.extend(sub_cat_keywords)
+    return all_keywords
