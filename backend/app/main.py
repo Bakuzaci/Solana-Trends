@@ -18,23 +18,34 @@ async def lifespan(app: FastAPI):
     Application lifespan handler for startup and shutdown events.
     """
     # Startup
-    print(f"Starting {settings.app_name}...")
-    await init_db()
-    print("Database initialized successfully.")
+    try:
+        print(f"Starting {settings.app_name}...")
+        await init_db()
+        print("Database initialized successfully.")
 
-    # Start background scheduler
-    scheduler = await start_scheduler()
-    app.state.scheduler = scheduler
-    print("Background scheduler started.")
+        # Start background scheduler
+        scheduler = await start_scheduler()
+        app.state.scheduler = scheduler
+        print("Background scheduler started.")
+        print("Application startup complete - ready to accept requests!")
+    except Exception as e:
+        print(f"STARTUP ERROR: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
 
     yield
 
     # Shutdown
-    print("Shutting down...")
-    await stop_scheduler(app.state.scheduler)
-    print("Scheduler stopped.")
-    await close_db()
-    print("Database connections closed.")
+    try:
+        print("Shutting down...")
+        if hasattr(app.state, 'scheduler'):
+            await stop_scheduler(app.state.scheduler)
+            print("Scheduler stopped.")
+        await close_db()
+        print("Database connections closed.")
+    except Exception as e:
+        print(f"SHUTDOWN ERROR: {e}")
 
 
 # Create FastAPI application
