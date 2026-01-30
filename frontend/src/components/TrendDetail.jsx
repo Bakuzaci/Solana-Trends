@@ -163,6 +163,7 @@ export default function TrendDetail() {
   const { category } = useParams();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const [graduatedOnly, setGraduatedOnly] = useState(false);
 
   const subCategory = searchParams.get('sub') || null;
   const timeWindow = searchParams.get('tw') || '24h';
@@ -172,7 +173,7 @@ export default function TrendDetail() {
     category,
     subCategory
   );
-  const { data: coins = [], isLoading: coinsLoading } = useTrendCoins(category, subCategory, timeWindow);
+  const { data: coins = [], isLoading: coinsLoading } = useTrendCoins(category, subCategory, timeWindow, graduatedOnly);
   const { data: history = [], isLoading: historyLoading } = useTrendHistory(category, subCategory, '7d');
 
   // Update time window
@@ -331,9 +332,22 @@ export default function TrendDetail() {
 
         {/* Coins Table */}
         <div className="mb-8">
-          <h2 className="text-xl font-semibold mb-4">
-            All Coins ({coins.length})
-          </h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold">
+              {graduatedOnly ? 'Graduated' : 'All'} Coins ({coins.length})
+            </h2>
+            <button
+              onClick={() => setGraduatedOnly(!graduatedOnly)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                graduatedOnly
+                  ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                  : 'bg-gray-800/50 text-gray-400 border border-gray-700 hover:border-gray-600'
+              }`}
+            >
+              <span className={`w-2 h-2 rounded-full ${graduatedOnly ? 'bg-green-400' : 'bg-gray-600'}`}></span>
+              Graduated Only
+            </button>
+          </div>
           {coinsLoading ? (
             <div className="bg-gray-800/50 rounded-lg border border-gray-700 p-8 flex items-center justify-center">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500"></div>

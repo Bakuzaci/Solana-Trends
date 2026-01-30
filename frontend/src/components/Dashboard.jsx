@@ -57,9 +57,10 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [timeWindow, setTimeWindow] = useState('24h');
   const [sortBy, setSortBy] = useState('acceleration');
+  const [graduatedOnly, setGraduatedOnly] = useState(false);
 
   // Use React Query hook - destructure with renamed properties
-  const { data: trends = [], isLoading: loading, error, refetch } = useTrends(timeWindow, sortBy);
+  const { data: trends = [], isLoading: loading, error, refetch } = useTrends(timeWindow, sortBy, graduatedOnly);
 
   const handleTrendClick = (trend) => {
     const params = new URLSearchParams();
@@ -71,20 +72,32 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
+    <div className="min-h-screen bg-black text-white">
       {/* Header */}
-      <header className="border-b border-gray-800 bg-gray-900/95 backdrop-blur sticky top-0 z-10">
+      <header className="glass border-b border-white/5 sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-6 py-4">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
-              <h1 className="text-2xl font-bold">
-                <span className="text-purple-400">Solana</span> Meme Coin Trends
+              <h1 className="text-2xl font-semibold tracking-tight">
+                <span className="text-purple-400">TrendRadar</span><span className="text-gray-500">.Sol</span>
               </h1>
-              <p className="text-gray-400 text-sm mt-1">
-                Track emerging trends in the Solana meme coin ecosystem
+              <p className="text-gray-500 text-sm mt-1 font-light">
+                Real-time Solana meme coin intelligence
               </p>
             </div>
             <div className="flex items-center gap-4">
+              {/* Graduated Only Toggle */}
+              <button
+                onClick={() => setGraduatedOnly(!graduatedOnly)}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                  graduatedOnly
+                    ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                    : 'bg-gray-800/50 text-gray-400 border border-gray-700 hover:border-gray-600'
+                }`}
+              >
+                <span className={`w-2 h-2 rounded-full ${graduatedOnly ? 'bg-green-400' : 'bg-gray-600'}`}></span>
+                Graduated
+              </button>
               <SortSelect value={sortBy} onChange={setSortBy} />
               <TimeWindowToggle value={timeWindow} onChange={setTimeWindow} />
             </div>
@@ -96,23 +109,23 @@ export default function Dashboard() {
       <main className="max-w-6xl mx-auto px-6 py-8">
         {/* Stats Bar */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          <div className="bg-gray-800/50 rounded-lg border border-gray-700 p-4">
-            <p className="text-gray-400 text-sm">Total Trends</p>
-            <p className="text-2xl font-bold text-white">{trends.length}</p>
+          <div className="glass-card rounded-2xl p-4">
+            <p className="text-gray-500 text-xs font-medium uppercase tracking-wider">Trends</p>
+            <p className="text-2xl font-semibold text-white mt-1">{trends.length}</p>
           </div>
-          <div className="bg-gray-800/50 rounded-lg border border-gray-700 p-4">
-            <p className="text-gray-400 text-sm">Time Window</p>
-            <p className="text-2xl font-bold text-purple-400">{timeWindow}</p>
+          <div className="glass-card rounded-2xl p-4">
+            <p className="text-gray-500 text-xs font-medium uppercase tracking-wider">Window</p>
+            <p className="text-2xl font-semibold text-purple-400 mt-1">{timeWindow}</p>
           </div>
-          <div className="bg-gray-800/50 rounded-lg border border-gray-700 p-4">
-            <p className="text-gray-400 text-sm">Total Coins</p>
-            <p className="text-2xl font-bold text-white">
+          <div className="glass-card rounded-2xl p-4">
+            <p className="text-gray-500 text-xs font-medium uppercase tracking-wider">Coins</p>
+            <p className="text-2xl font-semibold text-white mt-1">
               {trends.reduce((sum, t) => sum + (t.coin_count || 0), 0)}
             </p>
           </div>
-          <div className="bg-gray-800/50 rounded-lg border border-gray-700 p-4">
-            <p className="text-gray-400 text-sm">Total Market Cap</p>
-            <p className="text-2xl font-bold text-white">
+          <div className="glass-card rounded-2xl p-4">
+            <p className="text-gray-500 text-xs font-medium uppercase tracking-wider">Market Cap</p>
+            <p className="text-2xl font-semibold text-white mt-1">
               {formatCurrency(trends.reduce((sum, t) => sum + (t.total_market_cap || 0), 0))}
             </p>
           </div>
@@ -181,9 +194,9 @@ export default function Dashboard() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-gray-800 py-6">
-        <div className="max-w-6xl mx-auto px-6 text-center text-gray-500 text-sm">
-          <p>Solana Meme Coin Trend Dashboard - Data refreshes every 60 seconds</p>
+      <footer className="border-t border-white/5 py-6">
+        <div className="max-w-6xl mx-auto px-6 text-center text-gray-600 text-sm font-light">
+          <p>TrendRadar.Sol • Real-time data</p>
         </div>
       </footer>
     </div>

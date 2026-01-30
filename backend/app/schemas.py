@@ -150,6 +150,7 @@ class CategoryTrend(BaseModel):
     """Trend data for a single category."""
     category: str
     sub_category: Optional[str] = None
+    emoji: str = "📊"
     coin_count: int = 0
     total_market_cap: float = 0.0
     acceleration_score: float = 0.0

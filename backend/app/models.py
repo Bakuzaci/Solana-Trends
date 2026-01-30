@@ -1,5 +1,5 @@
 """
-SQLAlchemy database models for Solana Meme Coin Trend Dashboard.
+SQLAlchemy database models for TrendRadar.Sol.
 """
 from datetime import datetime
 from typing import Optional, List
@@ -45,6 +45,9 @@ class Token(Base):
     # Breakout meta detection
     is_breakout_meta: Mapped[bool] = mapped_column(Boolean, default=False)
     breakout_meta_cluster: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Graduation status (migrated from PumpFun bonding curve to Raydium LP)
+    is_graduated: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # Relationship to snapshots
     snapshots: Mapped[List["Snapshot"]] = relationship(

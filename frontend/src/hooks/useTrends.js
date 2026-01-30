@@ -9,10 +9,10 @@ import {
 } from '../api/client';
 
 // Hook to fetch all trends
-export const useTrends = (timeWindow = '24h', sortBy = 'acceleration') => {
+export const useTrends = (timeWindow = '24h', sortBy = 'acceleration', graduatedOnly = false) => {
   return useQuery({
-    queryKey: ['trends', timeWindow, sortBy],
-    queryFn: () => fetchTrends(timeWindow, sortBy),
+    queryKey: ['trends', timeWindow, sortBy, graduatedOnly],
+    queryFn: () => fetchTrends(timeWindow, sortBy, graduatedOnly),
     staleTime: 30000, // 30 seconds
     refetchInterval: 60000, // Refetch every minute
   });
@@ -29,10 +29,10 @@ export const useAcceleration = (timeWindow = '24h') => {
 };
 
 // Hook to fetch coins for a trend
-export const useCoins = (category, subCategory = null, limit = 50) => {
+export const useCoins = (category, subCategory = null, limit = 50, graduatedOnly = false) => {
   return useQuery({
-    queryKey: ['coins', category, subCategory, limit],
-    queryFn: () => fetchCoins(category, subCategory, limit),
+    queryKey: ['coins', category, subCategory, limit, graduatedOnly],
+    queryFn: () => fetchCoins(category, subCategory, limit, graduatedOnly),
     enabled: !!category,
     staleTime: 30000,
   });
@@ -85,6 +85,6 @@ export const useTopAccelerating = (timeWindow = '24h', limit = 5) => {
 };
 
 // Hook for trend coins (alias)
-export const useTrendCoins = (category, subCategory, timeWindow = '24h') => {
-  return useCoins(category, subCategory);
+export const useTrendCoins = (category, subCategory, timeWindow = '24h', graduatedOnly = false) => {
+  return useCoins(category, subCategory, 50, graduatedOnly);
 };

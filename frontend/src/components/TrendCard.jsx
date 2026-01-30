@@ -51,7 +51,7 @@ export default function TrendCard({ trend, onClick }) {
   return (
     <div
       onClick={onClick}
-      className={`bg-gray-900 rounded-xl p-4 border cursor-pointer transition-all duration-200 hover:bg-gray-800/80 ${getTrendColor(trend_direction)}`}
+      className={`glass-card rounded-2xl p-5 cursor-pointer ${getTrendColor(trend_direction)}`}
     >
       {/* Header */}
       <div className="flex items-start justify-between mb-3">

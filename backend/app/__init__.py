@@ -1,1 +1,1 @@
-# Solana Meme Coin Trend Dashboard Backend
+# TrendRadar.Sol Backend API

@@ -1,6 +1,6 @@
-# Solana Meme Coin Trend Dashboard
+# TrendRadar.Sol
 
-A real-time dashboard for tracking and analyzing trends in Solana meme coins. Automatically categorizes new tokens, detects emerging trends, and identifies breakout metas using advanced acceleration metrics and clustering algorithms.
+A real-time dashboard for tracking and analyzing trends in Solana meme coins. Automatically categorizes new tokens with emoji indicators, detects emerging trends, and identifies breakout metas using advanced acceleration metrics and clustering algorithms.
 
 ## Overview
 
@@ -12,9 +12,11 @@ This project monitors Solana tokens (primarily from PumpFun exchange), categoriz
 ## Features
 
 - **Automatic Token Categorization**: Uses fuzzy string matching (rapidfuzz) to categorize tokens into themes like Animals, Meme Culture, Pop Culture, Technology, Finance, etc.
+- **Visual Category Emojis**: Each category and sub-category displays with contextual emojis for quick visual identification
 - **Trend Acceleration Scoring**: Calculates acceleration metrics based on coin count growth, market cap velocity, and statistical breakout detection
 - **Breakout Meta Detection**: Identifies emerging trend clusters using DBSCAN algorithm
 - **Real-time Updates**: Background scheduler fetches new tokens every 15 minutes (configurable)
+- **Manual Snapshot Trigger**: Trigger on-demand snapshots and aggregations via API endpoint
 - **Historical Tracking**: Stores snapshots for trend analysis over multiple time windows (12h, 24h, 7d)
 - **Mock Data Mode**: Works without Moralis API key using generated mock data for development
 
@@ -95,10 +97,11 @@ VITE_API_URL=http://localhost:8000
 
 ## API Endpoints
 
-- `GET /api/trends` - Get all trending categories
+- `GET /api/trends` - Get all trending categories with emojis and acceleration scores
 - `GET /api/trends/{category}/{sub_category}/coins` - Get coins for a specific trend
 - `GET /api/acceleration/top` - Get top accelerating trends
 - `GET /api/history/{category}/{sub_category}` - Get historical trend data
+- `POST /api/trigger-snapshot` - Manually trigger a snapshot and aggregation job
 - `GET /health` - Health check
 
 ## Technology Stack

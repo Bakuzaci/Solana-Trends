@@ -18,6 +18,7 @@ from ..schemas import (
     CategoryTrend,
     PaginatedResponse,
 )
+from ..services.categorizer import get_category_emoji
 
 router = APIRouter()
 
@@ -41,6 +42,7 @@ async def get_trends(
     time_window: TimeWindowType = Query("24h", description="Time window for trends"),
     sort_by: SortByType = Query("acceleration", description="Sort field"),
     limit: int = Query(50, ge=1, le=200, description="Maximum number of trends"),
+    graduated_only: bool = Query(False, description="Only include graduated tokens (with liquidity)"),
     db: AsyncSession = Depends(get_db),
 ) -> List[CategoryTrend]:
     """
@@ -95,6 +97,7 @@ async def get_trends(
             CategoryTrend(
                 category=trend.category,
                 sub_category=trend.sub_category,
+                emoji=get_category_emoji(trend.category, trend.sub_category),
                 coin_count=trend.coin_count or 0,
                 total_market_cap=trend.total_market_cap or 0.0,
                 acceleration_score=trend.acceleration_score or 0.0,
@@ -113,6 +116,7 @@ async def get_trend_coins(
     sub_category: str,
     limit: int = Query(50, ge=1, le=200, description="Maximum number of coins"),
     offset: int = Query(0, ge=0, description="Offset for pagination"),
+    graduated_only: bool = Query(False, description="Only include graduated tokens (with liquidity)"),
     db: AsyncSession = Depends(get_db),
 ) -> List[CoinResponse]:
     """
@@ -124,24 +128,46 @@ async def get_trend_coins(
     # Handle "all" as a special case for sub_category
     if sub_category.lower() == "all":
         # Get all coins in the primary category
-        token_query = (
-            select(Token)
-            .where(Token.primary_category == category)
-            .offset(offset)
-            .limit(limit)
-        )
-    else:
-        token_query = (
-            select(Token)
-            .where(
-                and_(
-                    Token.primary_category == category,
-                    Token.sub_category == sub_category,
-                )
+        if graduated_only:
+            token_query = (
+                select(Token)
+                .where(and_(Token.primary_category == category, Token.is_graduated == True))
+                .offset(offset)
+                .limit(limit)
             )
-            .offset(offset)
-            .limit(limit)
-        )
+        else:
+            token_query = (
+                select(Token)
+                .where(Token.primary_category == category)
+                .offset(offset)
+                .limit(limit)
+            )
+    else:
+        if graduated_only:
+            token_query = (
+                select(Token)
+                .where(
+                    and_(
+                        Token.primary_category == category,
+                        Token.sub_category == sub_category,
+                        Token.is_graduated == True,
+                    )
+                )
+                .offset(offset)
+                .limit(limit)
+            )
+        else:
+            token_query = (
+                select(Token)
+                .where(
+                    and_(
+                        Token.primary_category == category,
+                        Token.sub_category == sub_category,
+                    )
+                )
+                .offset(offset)
+                .limit(limit)
+            )
 
     result = await db.execute(token_query)
     tokens = result.scalars().all()

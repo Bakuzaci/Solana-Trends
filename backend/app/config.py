@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     frontend_url: str = "http://localhost:5173"
 
     # Application settings
-    app_name: str = "Solana Meme Coin Trend Dashboard"
+    app_name: str = "TrendRadar.Sol"
     debug: bool = False
 
     @property

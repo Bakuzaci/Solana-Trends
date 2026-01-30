@@ -12,10 +12,10 @@ const handleResponse = async (response) => {
 };
 
 // Fetch trends with time window and sort options
-export const fetchTrends = async (timeWindow = '24h', sortBy = 'acceleration') => {
+export const fetchTrends = async (timeWindow = '24h', sortBy = 'acceleration', graduatedOnly = false) => {
   try {
     const response = await fetch(
-      `${API_URL}/api/trends?time_window=${timeWindow}&sort_by=${sortBy}`
+      `${API_URL}/api/trends?time_window=${timeWindow}&sort_by=${sortBy}&graduated_only=${graduatedOnly}`
     );
     return handleResponse(response);
   } catch (error) {
@@ -35,7 +35,7 @@ export const fetchTrends = async (timeWindow = '24h', sortBy = 'acceleration') =
 export const fetchAcceleration = async (timeWindow = '24h') => {
   try {
     const response = await fetch(
-      `${API_URL}/api/acceleration?time_window=${timeWindow}`
+      `${API_URL}/api/acceleration/top?time_window=${timeWindow}`
     );
     return handleResponse(response);
   } catch (error) {
@@ -51,14 +51,19 @@ export const fetchAcceleration = async (timeWindow = '24h') => {
 };
 
 // Fetch coins for a specific trend category
-export const fetchCoins = async (category, subCategory = null, limit = 50) => {
+export const fetchCoins = async (category, subCategory, limit = 50, graduatedOnly = false) => {
   try {
-    let url = `${API_URL}/api/coins?category=${encodeURIComponent(category)}&limit=${limit}`;
-    if (subCategory) {
-      url += `&sub_category=${encodeURIComponent(subCategory)}`;
-    }
+    const url = `${API_URL}/api/trends/${encodeURIComponent(category)}/${encodeURIComponent(subCategory)}/coins?limit=${limit}&graduated_only=${graduatedOnly}`;
     const response = await fetch(url);
-    return handleResponse(response);
+    const data = await handleResponse(response);
+    // Map API field names to what CoinTable expects
+    return data.map(coin => ({
+      ...coin,
+      address: coin.token_address,
+      market_cap: coin.market_cap_usd,
+      liquidity: coin.liquidity_usd,
+      price_change: coin.price_change_24h,
+    }));
   } catch (error) {
     console.warn('API unavailable, using mock data:', error.message);
     return mockCoins.filter(c => c.category === category);
@@ -66,14 +71,13 @@ export const fetchCoins = async (category, subCategory = null, limit = 50) => {
 };
 
 // Fetch historical trend data
-export const fetchHistory = async (category, subCategory = null, timeWindow = '7d') => {
+export const fetchHistory = async (category, subCategory, timeWindow = '7d') => {
   try {
-    let url = `${API_URL}/api/history?category=${encodeURIComponent(category)}&time_window=${timeWindow}`;
-    if (subCategory) {
-      url += `&sub_category=${encodeURIComponent(subCategory)}`;
-    }
+    const url = `${API_URL}/api/history/${encodeURIComponent(category)}/${encodeURIComponent(subCategory)}?period=${timeWindow}`;
     const response = await fetch(url);
-    return handleResponse(response);
+    const data = await handleResponse(response);
+    // Return just the data_points array for TrendChart
+    return data.data_points || [];
   } catch (error) {
     console.warn('API unavailable, using mock data:', error.message);
     return mockHistory.filter(h => h.category === category);
@@ -83,7 +87,7 @@ export const fetchHistory = async (category, subCategory = null, timeWindow = '7
 // Fetch breakout/emerging metas
 export const fetchBreakoutMetas = async () => {
   try {
-    const response = await fetch(`${API_URL}/api/breakout-metas`);
+    const response = await fetch(`${API_URL}/api/acceleration/breakout-metas`);
     return handleResponse(response);
   } catch (error) {
     console.warn('API unavailable, using mock data:', error.message);
@@ -92,14 +96,15 @@ export const fetchBreakoutMetas = async () => {
 };
 
 // Fetch a single trend detail
-export const fetchTrendDetail = async (category, subCategory = null) => {
+export const fetchTrendDetail = async (category, subCategory) => {
   try {
-    let url = `${API_URL}/api/trends/${encodeURIComponent(category)}`;
-    if (subCategory) {
-      url += `/${encodeURIComponent(subCategory)}`;
-    }
-    const response = await fetch(url);
-    return handleResponse(response);
+    // Fetch all trends and filter to the specific one
+    const response = await fetch(`${API_URL}/api/trends`);
+    const trends = await handleResponse(response);
+    const trend = trends.find(t =>
+      t.category === category && t.sub_category === subCategory
+    );
+    return trend || null;
   } catch (error) {
     console.warn('API unavailable, using mock data:', error.message);
     const trend = mockTrends.find(t =>

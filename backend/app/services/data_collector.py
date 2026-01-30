@@ -137,6 +137,9 @@ class MoralisClient:
         """
         Get current price and market data for a token.
 
+        Fetches both price and metadata to calculate market cap properly
+        for new PumpFun tokens.
+
         Args:
             token_address: Solana token address
 
@@ -147,13 +150,36 @@ class MoralisClient:
             return self._generate_mock_price()
 
         try:
-            endpoint = f"/token/mainnet/{token_address}/price"
-            data = await self._make_request(endpoint)
+            # Fetch price data
+            price_endpoint = f"/token/mainnet/{token_address}/price"
+            price_data = await self._make_request(price_endpoint)
+
+            price_usd = price_data.get("usdPrice", 0)
+            market_cap = price_data.get("marketCap", 0)
+            liquidity = price_data.get("liquidity", 0)
+
+            # If no market cap from price endpoint, try metadata for FDV or calculate it
+            if not market_cap:
+                try:
+                    metadata_endpoint = f"/token/mainnet/{token_address}/metadata"
+                    metadata = await self._make_request(metadata_endpoint)
+
+                    # Try fullyDilutedValue first
+                    fdv = metadata.get("fullyDilutedValue")
+                    if fdv:
+                        market_cap = float(fdv)
+                    else:
+                        # Calculate from price * supply
+                        total_supply = metadata.get("totalSupplyFormatted")
+                        if total_supply and price_usd:
+                            market_cap = float(total_supply) * price_usd
+                except Exception as e:
+                    print(f"Could not fetch metadata for {token_address[:8]}...: {e}")
 
             return {
-                "price_usd": data.get("usdPrice", 0),
-                "market_cap_usd": data.get("marketCap", 0),
-                "liquidity_usd": data.get("liquidity", 0),
+                "price_usd": price_usd,
+                "market_cap_usd": market_cap,
+                "liquidity_usd": liquidity,
             }
 
         except httpx.HTTPError as e:

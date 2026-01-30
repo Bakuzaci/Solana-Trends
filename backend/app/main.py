@@ -1,5 +1,5 @@
 """
-Main FastAPI application entry point for Solana Meme Coin Trend Dashboard.
+Main FastAPI application entry point for TrendRadar.Sol.
 """
 from contextlib import asynccontextmanager
 
@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import settings
 from .database import init_db, close_db
 from .api import trends, acceleration, history
-from .tasks.scheduler import start_scheduler, stop_scheduler
+from .tasks.scheduler import start_scheduler, stop_scheduler, snapshot_job, aggregate_job
 
 
 @asynccontextmanager
@@ -73,6 +73,17 @@ async def health_check():
         "database": "connected",
         "moralis_configured": settings.has_moralis_key,
     }
+
+
+@app.post("/api/trigger-snapshot")
+async def trigger_snapshot():
+    """Manually trigger a snapshot and aggregation job."""
+    try:
+        await snapshot_job()
+        await aggregate_job()
+        return {"status": "success", "message": "Snapshot and aggregation completed"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 # Include API routers

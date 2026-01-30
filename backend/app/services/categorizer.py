@@ -2,10 +2,91 @@
 Token categorization service using fuzzy string matching.
 
 Categorizes Solana meme coins based on name/symbol patterns
-using rapidfuzz for fuzzy matching.
+using rapidfuzz for fuzzy matching. Includes emoji mapping
+for visual category identification.
 """
 from typing import Dict, List, Optional, Tuple
 from rapidfuzz import fuzz, process
+
+
+# =============================================================================
+# Category Emoji Mapping
+# =============================================================================
+
+CATEGORY_EMOJIS: Dict[str, Dict[str, str]] = {
+    "Animals": {
+        "_default": "🐾",
+        "Dogs": "🐕",
+        "Cats": "🐱",
+        "Frogs": "🐸",
+        "Monkeys": "🐵",
+        "Birds": "🦅",
+        "Other Animals": "🦁",
+    },
+    "Meme Culture": {
+        "_default": "😂",
+        "Classic Memes": "🐸",
+        "Internet Culture": "💀",
+        "Emoji Culture": "🔥",
+    },
+    "Pop Culture": {
+        "_default": "⭐",
+        "Celebrities": "🌟",
+        "Movies & TV": "🎬",
+        "Anime": "🎌",
+        "Gaming": "🎮",
+    },
+    "Finance": {
+        "_default": "💰",
+        "Trading": "📈",
+        "DeFi": "🏦",
+        "Crypto Culture": "₿",
+    },
+    "Technology": {
+        "_default": "💻",
+        "AI & Bots": "🤖",
+        "Tech Companies": "🏢",
+        "Futurism": "🚀",
+    },
+    "Food & Lifestyle": {
+        "_default": "🍕",
+        "Food": "🍔",
+        "Lifestyle": "💎",
+    },
+    "Politics": {
+        "_default": "🏛️",
+        "Political": "🗳️",
+        "Social Issues": "✊",
+    },
+    "Miscellaneous": {
+        "_default": "✨",
+        "Numbers & Symbols": "🔢",
+        "Abstract": "🌌",
+        "Random": "🎲",
+    },
+}
+
+
+def get_category_emoji(primary_category: str, sub_category: Optional[str] = None) -> str:
+    """
+    Get the emoji for a category.
+
+    Args:
+        primary_category: The primary category name
+        sub_category: Optional sub-category name
+
+    Returns:
+        Emoji string for the category
+    """
+    if primary_category not in CATEGORY_EMOJIS:
+        return "📊"
+
+    category_emojis = CATEGORY_EMOJIS[primary_category]
+
+    if sub_category and sub_category in category_emojis:
+        return category_emojis[sub_category]
+
+    return category_emojis.get("_default", "📊")
 
 
 # =============================================================================

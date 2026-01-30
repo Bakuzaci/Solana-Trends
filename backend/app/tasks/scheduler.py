@@ -87,18 +87,43 @@ async def snapshot_job():
                     session.add(new_token)
                     tokens_created += 1
 
-                # Create snapshot for this token
-                snapshot = Snapshot(
-                    token_address=token_data.token_address,
-                    snapshot_time=datetime.utcnow(),
-                    market_cap_usd=token_data.market_cap_usd,
-                    liquidity_usd=token_data.liquidity_usd,
-                    price_usd=token_data.price_usd,
-                )
-                session.add(snapshot)
-
             await session.commit()
             print(f"Tokens - Created: {tokens_created}, Updated: {tokens_updated}")
+
+            # Fetch prices for all tokens (PumpFun endpoint doesn't include market cap)
+            new_token_addresses = [t.token_address for t in new_tokens]
+            if new_token_addresses:
+                print(f"Fetching prices for {len(new_token_addresses)} tokens...")
+                prices = await fetch_token_prices(new_token_addresses)
+                now = datetime.utcnow()
+                snapshots_created = 0
+                graduated_count = 0
+                for address, price_data in prices.items():
+                    liquidity = price_data.get("liquidity_usd") or 0
+
+                    # Create snapshot with whatever data we have
+                    snapshot = Snapshot(
+                        token_address=address,
+                        snapshot_time=now,
+                        market_cap_usd=price_data.get("market_cap_usd") or 0,
+                        liquidity_usd=liquidity,
+                        price_usd=price_data.get("price_usd") or 0,
+                    )
+                    session.add(snapshot)
+                    snapshots_created += 1
+
+                    # Mark token as graduated if it has liquidity (migrated to Raydium)
+                    if liquidity > 0:
+                        update_query = (
+                            Token.__table__.update()
+                            .where(Token.token_address == address)
+                            .values(is_graduated=True)
+                        )
+                        await session.execute(update_query)
+                        graduated_count += 1
+
+                await session.commit()
+                print(f"Created {snapshots_created} price snapshots, marked {graduated_count} as graduated")
 
             # Fetch updated prices for existing tokens
             await _update_existing_token_prices(session)
