@@ -118,13 +118,21 @@ class MoralisClient:
                 liquidity = item.get("liquidity")
                 price = item.get("priceUsd")
 
+                # Parse datetime with timezone handling
+                created_at_str = item.get("createdAt")
+                if created_at_str:
+                    try:
+                        created_at = datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
+                    except ValueError:
+                        created_at = datetime.utcnow()
+                else:
+                    created_at = datetime.utcnow()
+
                 token = TokenData(
                     token_address=item.get("tokenAddress", ""),
                     name=item.get("name", "Unknown"),
                     symbol=item.get("symbol", "???"),
-                    created_at=datetime.fromisoformat(
-                        item.get("createdAt", datetime.utcnow().isoformat())
-                    ),
+                    created_at=created_at,
                     # fullyDilutedValuation is the market cap for these tokens
                     market_cap_usd=float(fdv) if fdv else None,
                     liquidity_usd=float(liquidity) if liquidity else None,
@@ -176,13 +184,21 @@ class MoralisClient:
                 liquidity = item.get("liquidity")
                 price = item.get("priceUsd")
 
+                # Graduated endpoint uses graduatedAt, not createdAt
+                created_at_str = item.get("createdAt") or item.get("graduatedAt")
+                if created_at_str:
+                    try:
+                        created_at = datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
+                    except ValueError:
+                        created_at = datetime.utcnow()
+                else:
+                    created_at = datetime.utcnow()
+
                 token = TokenData(
                     token_address=item.get("tokenAddress", ""),
                     name=item.get("name", "Unknown"),
                     symbol=item.get("symbol", "???"),
-                    created_at=datetime.fromisoformat(
-                        item.get("createdAt", datetime.utcnow().isoformat())
-                    ),
+                    created_at=created_at,
                     market_cap_usd=float(fdv) if fdv else None,
                     liquidity_usd=float(liquidity) if liquidity else None,
                     price_usd=float(price) if price else None,
@@ -190,6 +206,7 @@ class MoralisClient:
                 )
                 tokens.append(token)
 
+            print(f"Parsed {len(tokens)} graduated tokens with liquidity data")
             return tokens
 
         except httpx.HTTPError as e:
