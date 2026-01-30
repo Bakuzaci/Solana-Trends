@@ -441,24 +441,38 @@ class MoralisClient:
         Returns:
             List of mock TokenData objects
         """
-        mock_names = [
+        # Real Solana meme coin addresses for testing Birdeye/Solscan links
+        REAL_TOKEN_ADDRESSES = {
             # Dogs
-            ("DogeCoin", "DOGE"), ("ShibaSol", "SHIB"), ("PuppyCoin", "PUPPY"),
+            "BONK": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+            "WIF": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+            # Cats
+            "MEW": "MEW1gQWJ3nEXg2qgERiKu7FAFj79PHvQVREQUzScPP5",
+            "POPCAT": "7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr",
+            # Celebrities
+            "TRUMP": "6p6xgHyF7AeE6TZkSmFsko444wqoP15icUSqi2jfGiPN",
+            # Memes
+            "FARTCOIN": "9BB6NFEcjBCtnNLFko2FqVQBq8HHM13kCyYcdQbgpump",
+        }
+
+        mock_names = [
+            # Dogs - use real addresses where available
+            ("Bonk", "BONK"), ("dogwifhat", "WIF"), ("PuppyCoin", "PUPPY"),
             ("WoofToken", "WOOF"), ("CorgiMoon", "CORGI"),
             # Cats
-            ("CatCoin", "CAT"), ("KittyMeme", "KITTY"), ("MeowToken", "MEOW"),
+            ("cat in a dogs world", "MEW"), ("Popcat", "POPCAT"), ("MeowToken", "MEOW"),
             ("WhiskersCoin", "WHISK"), ("NyanSol", "NYAN"),
             # Frogs
             ("PepeCoin", "PEPE"), ("FrogMoon", "FROG"), ("KermitToken", "KERMIT"),
             ("ToadCoin", "TOAD"), ("RibbitSol", "RIBBIT"),
             # Memes
-            ("WojakCoin", "WOJAK"), ("ChadToken", "CHAD"), ("BasedCoin", "BASED"),
+            ("Fartcoin", "FARTCOIN"), ("ChadToken", "CHAD"), ("BasedCoin", "BASED"),
             ("StonksMoon", "STONKS"), ("HodlToken", "HODL"),
             # AI
             ("GPTCoin", "GPT"), ("AIToken", "AI"), ("BotMoon", "BOT"),
             ("NeuralCoin", "NEURAL"), ("ChatToken", "CHAT"),
             # Celebrities
-            ("ElonCoin", "ELON"), ("TrumpToken", "TRUMP"), ("MuskMoon", "MUSK"),
+            ("Official Trump", "TRUMP"), ("ElonCoin", "ELON"), ("MuskMoon", "MUSK"),
             # Food
             ("PizzaCoin", "PIZZA"), ("BurgerToken", "BURGER"), ("TacoMoon", "TACO"),
             # Abstract
@@ -483,8 +497,11 @@ class MoralisClient:
                 name = f"{base_name}{suffix}"
                 symbol = f"{base_symbol}{suffix}"
 
-            # Generate random address
-            address = "".join(random.choices("123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz", k=44))
+            # Use real address if available, otherwise generate random
+            address = REAL_TOKEN_ADDRESSES.get(
+                symbol,
+                "".join(random.choices("123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz", k=44))
+            )
 
             # Random creation time in the last 24 hours
             created_at = now - timedelta(
