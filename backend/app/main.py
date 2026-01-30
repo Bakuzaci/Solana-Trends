@@ -86,6 +86,40 @@ async def trigger_snapshot():
         return {"status": "error", "message": str(e)}
 
 
+@app.get("/api/debug/moralis-graduated")
+async def debug_moralis_graduated():
+    """Debug endpoint to check Moralis graduated tokens response."""
+    from .services.data_collector import default_client
+
+    try:
+        # Fetch graduated tokens
+        data = await default_client._make_request(
+            "/token/mainnet/exchange/pumpfun/graduated",
+            params={"limit": 5}
+        )
+
+        # Return first 3 tokens with relevant fields
+        result = []
+        for item in data.get("result", [])[:3]:
+            result.append({
+                "tokenAddress": item.get("tokenAddress"),
+                "name": item.get("name"),
+                "liquidity": item.get("liquidity"),
+                "fullyDilutedValuation": item.get("fullyDilutedValuation"),
+                "priceUsd": item.get("priceUsd"),
+                "graduatedAt": item.get("graduatedAt"),
+            })
+
+        return {
+            "status": "success",
+            "count": len(data.get("result", [])),
+            "sample": result,
+            "raw_keys": list(data.get("result", [{}])[0].keys()) if data.get("result") else []
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 # Include API routers
 app.include_router(trends.router, prefix="/api/trends", tags=["trends"])
 app.include_router(acceleration.router, prefix="/api/acceleration", tags=["acceleration"])
