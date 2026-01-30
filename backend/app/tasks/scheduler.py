@@ -168,7 +168,6 @@ async def snapshot_job():
 
             await session.commit()
             print(f"Created {snapshots_created} price snapshots, marked {graduated_updated} as graduated")
-                print(f"Marked {graduated_count} tokens as graduated")
 
             # Fetch updated prices for existing tokens
             await _update_existing_token_prices(session)
