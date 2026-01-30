@@ -154,15 +154,16 @@ async def snapshot_job():
                 session.add(snapshot)
                 snapshots_created += 1
 
-                # Mark token as graduated if it has real liquidity
-                # This is the true definition: migrated from bonding curve to DEX
-                if liquidity > 0:
-                    update_query = (
-                        Token.__table__.update()
-                        .where(Token.token_address == address)
-                        .values(is_graduated=True)
-                    )
-                    await session.execute(update_query)
+                # Update graduation status based on liquidity
+                # A token is graduated if it has real DEX liquidity (migrated from bonding curve)
+                is_graduated = liquidity > 0
+                update_query = (
+                    Token.__table__.update()
+                    .where(Token.token_address == address)
+                    .values(is_graduated=is_graduated)
+                )
+                await session.execute(update_query)
+                if is_graduated:
                     graduated_updated += 1
 
             await session.commit()
