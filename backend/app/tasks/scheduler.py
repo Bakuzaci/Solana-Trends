@@ -64,6 +64,15 @@ async def snapshot_job():
             graduated_tokens = await fetch_graduated_tokens(limit=50)
             print(f"Fetched {len(graduated_tokens)} graduated tokens")
 
+            # Debug: Log first graduated token's data
+            if graduated_tokens:
+                sample = graduated_tokens[0]
+                print(f"Sample graduated token: {sample.name}")
+                print(f"  - market_cap_usd: {sample.market_cap_usd}")
+                print(f"  - liquidity_usd: {sample.liquidity_usd}")
+                print(f"  - price_usd: {sample.price_usd}")
+                print(f"  - is_graduated: {sample.metadata.get('is_graduated')}")
+
             # Combine tokens, avoiding duplicates
             seen_addresses = set()
             all_tokens = []
