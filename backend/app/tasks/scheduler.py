@@ -21,7 +21,6 @@ from ..services.data_collector import (
     fetch_new_tokens,
     fetch_token_prices,
     fetch_graduated_tokens,
-    check_token_graduation,
     TokenData,
 )
 from ..services.categorizer import categorize_token
@@ -215,53 +214,36 @@ async def _update_existing_token_prices(session):
     # Fetch prices
     prices = await fetch_token_prices(token_addresses)
 
-    # Create snapshots
+    # Create snapshots and update graduation status based on liquidity
     now = datetime.utcnow()
+    graduated_count = 0
     for address, price_data in prices.items():
+        liquidity = price_data.get("liquidity_usd") or 0
+
         snapshot = Snapshot(
             token_address=address,
             snapshot_time=now,
             market_cap_usd=price_data.get("market_cap_usd"),
-            liquidity_usd=price_data.get("liquidity_usd"),
+            liquidity_usd=liquidity,
             price_usd=price_data.get("price_usd"),
             price_change_24h=price_data.get("price_change_24h"),
             volume_24h=price_data.get("volume_24h"),
         )
         session.add(snapshot)
 
-    await session.commit()
-    print(f"Created {len(prices)} price snapshots")
-
-    # Check graduation status for tokens not yet marked as graduated
-    non_graduated_query = (
-        select(Token.token_address)
-        .where(
-            and_(
-                Token.token_address.in_(token_addresses),
-                Token.is_graduated == False
-            )
+        # Update graduation status based on liquidity
+        is_graduated = liquidity > 0
+        update_query = (
+            Token.__table__.update()
+            .where(Token.token_address == address)
+            .values(is_graduated=is_graduated)
         )
-    )
-    result = await session.execute(non_graduated_query)
-    non_graduated_addresses = [row[0] for row in result.fetchall()]
+        await session.execute(update_query)
+        if is_graduated:
+            graduated_count += 1
 
-    if non_graduated_addresses:
-        print(f"Checking graduation status for {len(non_graduated_addresses)} tokens...")
-        graduation_status = await check_token_graduation(non_graduated_addresses)
-        graduated_count = 0
-        for address, is_graduated in graduation_status.items():
-            if is_graduated:
-                update_query = (
-                    Token.__table__.update()
-                    .where(Token.token_address == address)
-                    .values(is_graduated=True)
-                )
-                await session.execute(update_query)
-                graduated_count += 1
-
-        await session.commit()
-        if graduated_count > 0:
-            print(f"Marked {graduated_count} existing tokens as graduated")
+    await session.commit()
+    print(f"Created {len(prices)} price snapshots, {graduated_count} graduated")
 
 
 async def _detect_breakouts(session):
