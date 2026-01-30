@@ -143,17 +143,54 @@ POST /token/{network}/prices
 
 ### Token Pairs
 
-Get all DEX pairs for a token.
+Get all DEX pairs for a token. **This is the best endpoint for comprehensive trading data.**
 
 ```
 GET /token/{network}/{address}/pairs
 ```
 
-**Response includes:**
-- Pair addresses
-- Exchange names (Raydium, Orca, Meteora, etc.)
-- Liquidity amounts
-- Trading activity
+**Response Schema:**
+```json
+{
+  "pairs": [
+    {
+      "exchangeAddress": "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8",
+      "exchangeName": "Raydium AMM v4",
+      "exchangeLogo": "https://entities-logos.s3.amazonaws.com/raydium.png",
+      "pairAddress": "Bzc9NZfMqkXR6fz1DBph7BDf9BroyEf6pnzESP7v5iiw",
+      "pairLabel": "Fartcoin/SOL",
+      "usdPrice": 1.199318671,
+      "usdPrice24hrPercentChange": 22.664745257790372,
+      "volume24hrUsd": 63991693.95772195,
+      "volume24hrNative": 273987.170173767,
+      "liquidityUsd": 25907004.26453429,
+      "baseToken": "9BB6NFEcjBCtnNLFko2FqVQBq8HHM13kCyYcdQbgpump",
+      "quoteToken": "So11111111111111111111111111111111111111112",
+      "inactivePair": false,
+      "pair": [
+        {
+          "tokenAddress": "9BB6NFEcjBCtnNLFko2FqVQBq8HHM13kCyYcdQbgpump",
+          "tokenName": "Fartcoin",
+          "tokenSymbol": "Fartcoin",
+          "tokenDecimals": "6",
+          "pairTokenType": "token0",
+          "liquidityUsd": 12937540.20684488
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Key Fields:**
+| Field | Description |
+|-------|-------------|
+| `usdPrice` | Current USD price |
+| `usdPrice24hrPercentChange` | 24-hour price change percentage |
+| `volume24hrUsd` | 24-hour trading volume in USD |
+| `liquidityUsd` | Total liquidity in USD |
+| `exchangeName` | DEX name (Raydium, Meteora, Orca, etc.) |
+| `pairAddress` | Trading pair contract address |
 
 ### Pair Statistics
 

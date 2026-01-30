@@ -268,34 +268,45 @@ class MoralisClient:
 
         return results
 
-    async def get_aggregated_pair_stats(
+    async def get_token_pairs(
         self,
         token_address: str
     ) -> Optional[Dict[str, Any]]:
         """
-        Get aggregated pair statistics for a token across all DEX pairs.
+        Get all DEX pairs for a token.
 
-        Returns volume, liquidity, and price change data.
+        Returns pair data including liquidity, price, volume, and price changes.
+
+        Response includes for each pair:
+        - pairAddress: Liquidity pool address
+        - exchangeName: DEX name (Raydium, Meteora, etc.)
+        - usdPrice: Current USD price
+        - usdPrice24hrPercentChange: 24h price change percentage
+        - volume24hrUsd: 24h trading volume in USD
+        - liquidityUsd: Total liquidity in USD
 
         Args:
             token_address: Solana token address
 
         Returns:
-            Dictionary with aggregated stats or None
+            Dictionary with pairs data or None
         """
         if self.use_mock:
             return {
-                "totalLiquidityUsd": random.uniform(1000, 1000000),
-                "volume24h": random.uniform(100, 100000),
-                "priceChange24h": random.uniform(-50, 100),
+                "pairs": [{
+                    "liquidityUsd": random.uniform(1000, 1000000),
+                    "volume24hrUsd": random.uniform(100, 100000),
+                    "usdPrice24hrPercentChange": random.uniform(-50, 100),
+                    "usdPrice": random.uniform(0.0000001, 0.01),
+                }]
             }
 
         try:
-            endpoint = self.AGGREGATED_PAIR_STATS_ENDPOINT.format(address=token_address)
+            endpoint = self.TOKEN_PAIRS_ENDPOINT.format(address=token_address)
             data = await self._make_request(endpoint)
             return data
         except httpx.HTTPError as e:
-            print(f"Error fetching pair stats for {token_address[:8]}...: {e}")
+            print(f"Error fetching pairs for {token_address[:8]}...: {e}")
             return None
 
     async def get_token_price(
@@ -305,7 +316,11 @@ class MoralisClient:
         """
         Get current price and comprehensive market data for a token.
 
-        Fetches price, pair stats, and metadata to get complete data.
+        Uses the pairs endpoint for the most accurate data including:
+        - Price from highest liquidity pair
+        - 24h price change percentage (usdPrice24hrPercentChange)
+        - 24h volume (volume24hrUsd)
+        - Liquidity (liquidityUsd)
 
         Args:
             token_address: Solana token address
@@ -317,43 +332,51 @@ class MoralisClient:
             return self._generate_mock_price()
 
         try:
-            # Fetch price data
-            price_endpoint = f"/token/mainnet/{token_address}/price"
-            price_data = await self._make_request(price_endpoint)
-
-            price_usd = float(price_data.get("usdPrice", 0) or 0)
-
             # Initialize values
+            price_usd = 0.0
             market_cap = 0.0
             liquidity = 0.0
             price_change_24h = None
             volume_24h = None
 
-            # Get aggregated pair stats for liquidity, volume, and price change
-            try:
-                pair_stats = await self.get_aggregated_pair_stats(token_address)
-                if pair_stats:
-                    # Extract values from pair stats - handle both string and numeric values
-                    liq = pair_stats.get("totalLiquidityUsd") or pair_stats.get("pairTotalLiquidityUsd")
-                    if liq:
-                        liquidity = float(liq)
+            # Get pairs data - this has the most accurate trading data
+            pairs_data = await self.get_token_pairs(token_address)
+            if pairs_data and pairs_data.get("pairs"):
+                # Use the first pair (highest liquidity is usually first)
+                pairs = pairs_data.get("pairs", [])
+                if pairs:
+                    # Find the pair with highest liquidity
+                    best_pair = max(pairs, key=lambda p: float(p.get("liquidityUsd", 0) or 0))
 
-                    vol = pair_stats.get("volume24h") or pair_stats.get("totalVolume24h")
-                    if vol:
-                        volume_24h = float(vol)
+                    # Extract data from best pair
+                    price_usd = float(best_pair.get("usdPrice", 0) or 0)
+                    liquidity = float(best_pair.get("liquidityUsd", 0) or 0)
 
-                    pchange = pair_stats.get("priceChange24h") or pair_stats.get("pricePercentChange24h")
+                    # 24h price change - this is the key field
+                    pchange = best_pair.get("usdPrice24hrPercentChange")
                     if pchange is not None:
                         price_change_24h = float(pchange)
-            except Exception as e:
-                print(f"Could not fetch pair stats for {token_address[:8]}...: {e}")
+
+                    # 24h volume
+                    vol = best_pair.get("volume24hrUsd")
+                    if vol is not None:
+                        volume_24h = float(vol)
+
+            # If no pairs data, fallback to price endpoint
+            if not price_usd:
+                try:
+                    price_endpoint = f"/token/mainnet/{token_address}/price"
+                    price_data = await self._make_request(price_endpoint)
+                    price_usd = float(price_data.get("usdPrice", 0) or 0)
+                except Exception as e:
+                    print(f"Could not fetch price for {token_address[:8]}...: {e}")
 
             # Get market cap from metadata
             try:
                 metadata_endpoint = f"/token/mainnet/{token_address}/metadata"
                 metadata = await self._make_request(metadata_endpoint)
 
-                # Try fullyDilutedValue first
+                # Try fullyDilutedValuation first
                 fdv = metadata.get("fullyDilutedValuation") or metadata.get("fullyDilutedValue")
                 if fdv:
                     market_cap = float(fdv)
