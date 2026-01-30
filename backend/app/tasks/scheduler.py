@@ -114,29 +114,49 @@ async def snapshot_job():
             await session.commit()
             print(f"Tokens - Created: {tokens_created}, Updated: {tokens_updated}")
 
-            # Fetch prices for all tokens
-            new_token_addresses = [t.token_address for t in all_tokens]
-            if new_token_addresses:
-                print(f"Fetching prices for {len(new_token_addresses)} tokens...")
-                prices = await fetch_token_prices(new_token_addresses)
-                now = datetime.utcnow()
-                snapshots_created = 0
-                for address, price_data in prices.items():
-                    # Create snapshot with whatever data we have
-                    snapshot = Snapshot(
-                        token_address=address,
-                        snapshot_time=now,
-                        market_cap_usd=price_data.get("market_cap_usd") or 0,
-                        liquidity_usd=price_data.get("liquidity_usd") or 0,
-                        price_usd=price_data.get("price_usd") or 0,
-                        price_change_24h=price_data.get("price_change_24h"),
-                        volume_24h=price_data.get("volume_24h"),
-                    )
-                    session.add(snapshot)
-                    snapshots_created += 1
+            # Create initial snapshots using data from the token endpoints
+            # This preserves liquidity/market cap from PumpFun endpoints
+            now = datetime.utcnow()
+            snapshots_created = 0
 
-                await session.commit()
-                print(f"Created {snapshots_created} price snapshots")
+            # Build a map of token data from the fetched tokens
+            token_data_map = {t.token_address: t for t in all_tokens}
+
+            # Fetch additional price data (pairs endpoint for price changes)
+            new_token_addresses = [t.token_address for t in all_tokens]
+            prices = {}
+            if new_token_addresses:
+                print(f"Fetching additional price data for {len(new_token_addresses)} tokens...")
+                prices = await fetch_token_prices(new_token_addresses)
+
+            for token_data in all_tokens:
+                address = token_data.token_address
+                price_update = prices.get(address, {})
+
+                # Prefer data from token endpoint, fall back to price endpoint
+                # Token endpoints have better data for new/graduated tokens
+                market_cap = token_data.market_cap_usd or price_update.get("market_cap_usd") or 0
+                liquidity = token_data.liquidity_usd or price_update.get("liquidity_usd") or 0
+                price = token_data.price_usd or price_update.get("price_usd") or 0
+
+                # Price change and volume only come from pairs endpoint
+                price_change_24h = price_update.get("price_change_24h")
+                volume_24h = price_update.get("volume_24h")
+
+                snapshot = Snapshot(
+                    token_address=address,
+                    snapshot_time=now,
+                    market_cap_usd=market_cap,
+                    liquidity_usd=liquidity,
+                    price_usd=price,
+                    price_change_24h=price_change_24h,
+                    volume_24h=volume_24h,
+                )
+                session.add(snapshot)
+                snapshots_created += 1
+
+            await session.commit()
+            print(f"Created {snapshots_created} price snapshots")
 
                 # Check graduation status using Moralis bonding-status API
                 print("Checking graduation status via bonding-status API...")
