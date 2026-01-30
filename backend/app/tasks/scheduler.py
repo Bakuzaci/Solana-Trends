@@ -612,10 +612,12 @@ async def start_scheduler() -> AsyncIOScheduler:
 
     # Schedule initial jobs to run after a short delay (non-blocking)
     # This allows the app to start responding to health checks quickly
-    print("Scheduling initial data collection...")
+    initial_run_time = datetime.now() + timedelta(seconds=10)
+    print(f"Scheduling initial data collection to run at {initial_run_time}...")
     scheduler.add_job(
         snapshot_job,
-        trigger="date",  # Run once immediately
+        trigger="date",
+        run_date=initial_run_time,
         id="initial_snapshot_job",
         name="Initial snapshot fetch",
         replace_existing=True,
@@ -623,7 +625,8 @@ async def start_scheduler() -> AsyncIOScheduler:
     )
     scheduler.add_job(
         aggregate_job,
-        trigger="date",  # Run once immediately
+        trigger="date",
+        run_date=initial_run_time + timedelta(seconds=5),
         id="initial_aggregate_job",
         name="Initial aggregation",
         replace_existing=True,
