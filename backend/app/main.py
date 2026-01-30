@@ -52,7 +52,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.app_name,
     description="Backend API for tracking Solana meme coin trends and detecting breakout metas",
-    version="1.0.0",
+    version="1.0.1",
     lifespan=lifespan,
 )
 
@@ -72,7 +72,7 @@ async def root():
     return {
         "status": "online",
         "app": settings.app_name,
-        "version": "1.0.0",
+        "version": "1.0.1",
     }
 
 
