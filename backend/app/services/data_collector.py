@@ -37,6 +37,8 @@ class MoralisClient:
 
     BASE_URL = "https://solana-gateway.moralis.io"
     PUMPFUN_ENDPOINT = "/token/mainnet/exchange/pumpfun/new"
+    PUMPFUN_GRADUATED_ENDPOINT = "/token/mainnet/exchange/pumpfun/graduated"
+    BONDING_STATUS_ENDPOINT = "/token/mainnet/{address}/bonding-status"
 
     def __init__(self, api_key: Optional[str] = None):
         """
@@ -129,6 +131,129 @@ class MoralisClient:
             print(f"Error fetching tokens from Moralis: {e}")
             # Fallback to mock data on error
             return self._generate_mock_tokens(limit)
+
+    async def get_graduated_pumpfun_tokens(
+        self,
+        limit: int = 100
+    ) -> List[TokenData]:
+        """
+        Fetch graduated tokens from PumpFun exchange.
+
+        Graduated tokens have completed the bonding curve and migrated
+        to Raydium with real liquidity.
+
+        Args:
+            limit: Maximum number of tokens to fetch
+
+        Returns:
+            List of TokenData objects for graduated tokens
+        """
+        if self.use_mock:
+            # Return mock tokens marked as graduated
+            tokens = self._generate_mock_tokens(limit)
+            for t in tokens:
+                t.metadata["is_graduated"] = True
+            return tokens
+
+        try:
+            data = await self._make_request(
+                self.PUMPFUN_GRADUATED_ENDPOINT,
+                params={"limit": limit}
+            )
+
+            tokens = []
+            for item in data.get("result", []):
+                token = TokenData(
+                    token_address=item.get("tokenAddress", ""),
+                    name=item.get("name", "Unknown"),
+                    symbol=item.get("symbol", "???"),
+                    created_at=datetime.fromisoformat(
+                        item.get("createdAt", datetime.utcnow().isoformat())
+                    ),
+                    market_cap_usd=item.get("marketCapUsd"),
+                    liquidity_usd=item.get("liquidityUsd"),
+                    price_usd=item.get("priceUsd"),
+                    metadata={**item, "is_graduated": True},
+                )
+                tokens.append(token)
+
+            return tokens
+
+        except httpx.HTTPError as e:
+            print(f"Error fetching graduated tokens from Moralis: {e}")
+            return []
+
+    async def get_token_bonding_status(
+        self,
+        token_address: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get bonding status for a token.
+
+        Returns information about whether the token is still on bonding curve
+        or has graduated to a DEX.
+
+        Args:
+            token_address: Solana token address
+
+        Returns:
+            Dictionary with bonding status info or None
+        """
+        if self.use_mock:
+            # Mock: 30% chance of being graduated
+            return {
+                "is_graduated": random.random() > 0.7,
+                "bonding_curve_progress": random.uniform(0, 100),
+            }
+
+        try:
+            endpoint = self.BONDING_STATUS_ENDPOINT.format(address=token_address)
+            data = await self._make_request(endpoint)
+            return data
+        except httpx.HTTPError as e:
+            print(f"Error fetching bonding status for {token_address[:8]}...: {e}")
+            return None
+
+    async def check_graduation_status(
+        self,
+        token_addresses: List[str]
+    ) -> Dict[str, bool]:
+        """
+        Check graduation status for multiple tokens.
+
+        Args:
+            token_addresses: List of token addresses
+
+        Returns:
+            Dictionary mapping addresses to graduation status (True = graduated)
+        """
+        results = {}
+
+        # Batch requests to avoid rate limiting
+        batch_size = 10
+        for i in range(0, len(token_addresses), batch_size):
+            batch = token_addresses[i:i + batch_size]
+            tasks = [self.get_token_bonding_status(addr) for addr in batch]
+            batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            for addr, result in zip(batch, batch_results):
+                if isinstance(result, dict):
+                    # Check various possible response formats
+                    is_graduated = (
+                        result.get("is_graduated", False) or
+                        result.get("isGraduated", False) or
+                        result.get("status") == "graduated" or
+                        result.get("bondingStatus") == "completed"
+                    )
+                    results[addr] = is_graduated
+                else:
+                    results[addr] = False
+
+            # Small delay between batches
+            if i + batch_size < len(token_addresses):
+                await asyncio.sleep(0.5)
+
+        return results
 
     async def get_token_price(
         self,
@@ -337,3 +462,29 @@ async def fetch_token_prices(addresses: List[str]) -> Dict[str, Dict[str, float]
         Dictionary mapping addresses to price data
     """
     return await default_client.get_multiple_token_prices(addresses)
+
+
+async def fetch_graduated_tokens(limit: int = 100) -> List[TokenData]:
+    """
+    Convenience function to fetch graduated tokens using the default client.
+
+    Args:
+        limit: Maximum number of tokens to fetch
+
+    Returns:
+        List of TokenData objects for graduated tokens
+    """
+    return await default_client.get_graduated_pumpfun_tokens(limit)
+
+
+async def check_token_graduation(addresses: List[str]) -> Dict[str, bool]:
+    """
+    Convenience function to check graduation status for tokens.
+
+    Args:
+        addresses: List of token addresses
+
+    Returns:
+        Dictionary mapping addresses to graduation status
+    """
+    return await default_client.check_graduation_status(addresses)

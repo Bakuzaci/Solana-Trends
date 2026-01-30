@@ -17,7 +17,13 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from ..config import settings
 from ..database import async_session_maker
 from ..models import Token, Snapshot, TrendAggregate
-from ..services.data_collector import fetch_new_tokens, fetch_token_prices, TokenData
+from ..services.data_collector import (
+    fetch_new_tokens,
+    fetch_token_prices,
+    fetch_graduated_tokens,
+    check_token_graduation,
+    TokenData,
+)
 from ..services.categorizer import categorize_token
 from ..services.acceleration import (
     calculate_acceleration_score,
@@ -97,23 +103,27 @@ async def snapshot_job():
                 prices = await fetch_token_prices(new_token_addresses)
                 now = datetime.utcnow()
                 snapshots_created = 0
-                graduated_count = 0
                 for address, price_data in prices.items():
-                    liquidity = price_data.get("liquidity_usd") or 0
-
                     # Create snapshot with whatever data we have
                     snapshot = Snapshot(
                         token_address=address,
                         snapshot_time=now,
                         market_cap_usd=price_data.get("market_cap_usd") or 0,
-                        liquidity_usd=liquidity,
+                        liquidity_usd=price_data.get("liquidity_usd") or 0,
                         price_usd=price_data.get("price_usd") or 0,
                     )
                     session.add(snapshot)
                     snapshots_created += 1
 
-                    # Mark token as graduated if it has liquidity (migrated to Raydium)
-                    if liquidity > 0:
+                await session.commit()
+                print(f"Created {snapshots_created} price snapshots")
+
+                # Check graduation status using Moralis bonding-status API
+                print("Checking graduation status via bonding-status API...")
+                graduation_status = await check_token_graduation(new_token_addresses)
+                graduated_count = 0
+                for address, is_graduated in graduation_status.items():
+                    if is_graduated:
                         update_query = (
                             Token.__table__.update()
                             .where(Token.token_address == address)
@@ -123,7 +133,7 @@ async def snapshot_job():
                         graduated_count += 1
 
                 await session.commit()
-                print(f"Created {snapshots_created} price snapshots, marked {graduated_count} as graduated")
+                print(f"Marked {graduated_count} tokens as graduated")
 
             # Fetch updated prices for existing tokens
             await _update_existing_token_prices(session)
@@ -185,6 +195,37 @@ async def _update_existing_token_prices(session):
 
     await session.commit()
     print(f"Created {len(prices)} price snapshots")
+
+    # Check graduation status for tokens not yet marked as graduated
+    non_graduated_query = (
+        select(Token.token_address)
+        .where(
+            and_(
+                Token.token_address.in_(token_addresses),
+                Token.is_graduated == False
+            )
+        )
+    )
+    result = await session.execute(non_graduated_query)
+    non_graduated_addresses = [row[0] for row in result.fetchall()]
+
+    if non_graduated_addresses:
+        print(f"Checking graduation status for {len(non_graduated_addresses)} tokens...")
+        graduation_status = await check_token_graduation(non_graduated_addresses)
+        graduated_count = 0
+        for address, is_graduated in graduation_status.items():
+            if is_graduated:
+                update_query = (
+                    Token.__table__.update()
+                    .where(Token.token_address == address)
+                    .values(is_graduated=True)
+                )
+                await session.execute(update_query)
+                graduated_count += 1
+
+        await session.commit()
+        if graduated_count > 0:
+            print(f"Marked {graduated_count} existing tokens as graduated")
 
 
 async def _detect_breakouts(session):
