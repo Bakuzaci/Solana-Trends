@@ -64,15 +64,6 @@ async def snapshot_job():
             graduated_tokens = await fetch_graduated_tokens(limit=50)
             print(f"Fetched {len(graduated_tokens)} graduated tokens")
 
-            # Debug: Log first graduated token's data
-            if graduated_tokens:
-                sample = graduated_tokens[0]
-                print(f"Sample graduated token: {sample.name}")
-                print(f"  - market_cap_usd: {sample.market_cap_usd}")
-                print(f"  - liquidity_usd: {sample.liquidity_usd}")
-                print(f"  - price_usd: {sample.price_usd}")
-                print(f"  - is_graduated: {sample.metadata.get('is_graduated')}")
-
             # Combine tokens, avoiding duplicates
             seen_addresses = set()
             all_tokens = []
@@ -102,10 +93,8 @@ async def snapshot_job():
                         token_data.symbol
                     )
 
-                    # Check if this is a graduated token
-                    is_graduated = token_data.metadata.get("is_graduated", False)
-
                     # Create new token record
+                    # is_graduated will be set later based on liquidity
                     new_token = Token(
                         token_address=token_data.token_address,
                         name=token_data.name,
@@ -115,7 +104,7 @@ async def snapshot_job():
                         primary_category=primary_cat,
                         sub_category=sub_cat,
                         detected_keywords=",".join(keywords) if keywords else None,
-                        is_graduated=is_graduated,
+                        is_graduated=False,  # Will be updated based on liquidity
                     )
                     session.add(new_token)
                     tokens_created += 1
@@ -138,6 +127,7 @@ async def snapshot_job():
                 print(f"Fetching additional price data for {len(new_token_addresses)} tokens...")
                 prices = await fetch_token_prices(new_token_addresses)
 
+            graduated_updated = 0
             for token_data in all_tokens:
                 address = token_data.token_address
                 price_update = prices.get(address, {})
@@ -164,24 +154,19 @@ async def snapshot_job():
                 session.add(snapshot)
                 snapshots_created += 1
 
+                # Mark token as graduated if it has real liquidity
+                # This is the true definition: migrated from bonding curve to DEX
+                if liquidity > 0:
+                    update_query = (
+                        Token.__table__.update()
+                        .where(Token.token_address == address)
+                        .values(is_graduated=True)
+                    )
+                    await session.execute(update_query)
+                    graduated_updated += 1
+
             await session.commit()
-            print(f"Created {snapshots_created} price snapshots")
-
-                # Check graduation status using Moralis bonding-status API
-                print("Checking graduation status via bonding-status API...")
-                graduation_status = await check_token_graduation(new_token_addresses)
-                graduated_count = 0
-                for address, is_graduated in graduation_status.items():
-                    if is_graduated:
-                        update_query = (
-                            Token.__table__.update()
-                            .where(Token.token_address == address)
-                            .values(is_graduated=True)
-                        )
-                        await session.execute(update_query)
-                        graduated_count += 1
-
-                await session.commit()
+            print(f"Created {snapshots_created} price snapshots, marked {graduated_updated} as graduated")
                 print(f"Marked {graduated_count} tokens as graduated")
 
             # Fetch updated prices for existing tokens
