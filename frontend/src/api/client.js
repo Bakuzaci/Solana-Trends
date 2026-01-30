@@ -63,6 +63,7 @@ export const fetchCoins = async (category, subCategory, limit = 50, graduatedOnl
       market_cap: coin.market_cap_usd,
       liquidity: coin.liquidity_usd,
       price_change: coin.price_change_24h,
+      volume: coin.volume_24h,
     }));
   } catch (error) {
     console.warn('API unavailable, using mock data:', error.message);

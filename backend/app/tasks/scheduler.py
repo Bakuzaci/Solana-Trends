@@ -111,6 +111,8 @@ async def snapshot_job():
                         market_cap_usd=price_data.get("market_cap_usd") or 0,
                         liquidity_usd=price_data.get("liquidity_usd") or 0,
                         price_usd=price_data.get("price_usd") or 0,
+                        price_change_24h=price_data.get("price_change_24h"),
+                        volume_24h=price_data.get("volume_24h"),
                     )
                     session.add(snapshot)
                     snapshots_created += 1
@@ -190,6 +192,8 @@ async def _update_existing_token_prices(session):
             market_cap_usd=price_data.get("market_cap_usd"),
             liquidity_usd=price_data.get("liquidity_usd"),
             price_usd=price_data.get("price_usd"),
+            price_change_24h=price_data.get("price_change_24h"),
+            volume_24h=price_data.get("volume_24h"),
         )
         session.add(snapshot)
 

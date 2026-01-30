@@ -83,6 +83,8 @@ class Snapshot(Base):
     market_cap_usd: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     liquidity_usd: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     price_usd: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    price_change_24h: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    volume_24h: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
     # Relationship to token
     token: Mapped["Token"] = relationship("Token", back_populates="snapshots")

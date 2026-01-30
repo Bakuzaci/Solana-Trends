@@ -47,6 +47,7 @@ class CoinResponse(TokenResponse):
     liquidity_usd: Optional[float] = None
     price_usd: Optional[float] = None
     price_change_24h: Optional[float] = None
+    volume_24h: Optional[float] = None
 
     class Config:
         from_attributes = True
@@ -62,6 +63,8 @@ class SnapshotBase(BaseModel):
     market_cap_usd: Optional[float] = None
     liquidity_usd: Optional[float] = None
     price_usd: Optional[float] = None
+    price_change_24h: Optional[float] = None
+    volume_24h: Optional[float] = None
 
 
 class SnapshotCreate(SnapshotBase):

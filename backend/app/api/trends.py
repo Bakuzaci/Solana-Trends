@@ -204,14 +204,10 @@ async def get_trend_coins(
     snapshot_result = await db.execute(snapshot_query)
     snapshots = {s.token_address: s for s in snapshot_result.scalars().all()}
 
-    # Calculate 24h price changes
-    price_changes = await _calculate_price_changes(db, token_addresses)
-
-    # Build response with market data
+    # Build response with market data - use price_change_24h from snapshot directly
     response = []
     for token in tokens:
         snapshot = snapshots.get(token.token_address)
-        price_change = price_changes.get(token.token_address)
 
         coin = CoinResponse(
             id=token.id,
@@ -228,7 +224,9 @@ async def get_trend_coins(
             market_cap_usd=snapshot.market_cap_usd if snapshot else None,
             liquidity_usd=snapshot.liquidity_usd if snapshot else None,
             price_usd=snapshot.price_usd if snapshot else None,
-            price_change_24h=price_change,
+            # Use price_change_24h directly from Moralis API via snapshot
+            price_change_24h=snapshot.price_change_24h if snapshot else None,
+            volume_24h=snapshot.volume_24h if snapshot else None,
         )
         response.append(coin)
 

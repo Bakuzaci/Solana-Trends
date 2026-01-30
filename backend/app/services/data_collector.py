@@ -39,6 +39,8 @@ class MoralisClient:
     PUMPFUN_ENDPOINT = "/token/mainnet/exchange/pumpfun/new"
     PUMPFUN_GRADUATED_ENDPOINT = "/token/mainnet/exchange/pumpfun/graduated"
     BONDING_STATUS_ENDPOINT = "/token/mainnet/{address}/bonding-status"
+    TOKEN_PAIRS_ENDPOINT = "/token/mainnet/{address}/pairs"
+    AGGREGATED_PAIR_STATS_ENDPOINT = "/token/mainnet/{address}/pairs/stats"
 
     def __init__(self, api_key: Optional[str] = None):
         """
@@ -111,6 +113,11 @@ class MoralisClient:
 
             tokens = []
             for item in data.get("result", []):
+                # Parse numeric values - API returns strings for some fields
+                fdv = item.get("fullyDilutedValuation")
+                liquidity = item.get("liquidity")
+                price = item.get("priceUsd")
+
                 token = TokenData(
                     token_address=item.get("tokenAddress", ""),
                     name=item.get("name", "Unknown"),
@@ -118,9 +125,10 @@ class MoralisClient:
                     created_at=datetime.fromisoformat(
                         item.get("createdAt", datetime.utcnow().isoformat())
                     ),
-                    market_cap_usd=item.get("marketCapUsd"),
-                    liquidity_usd=item.get("liquidityUsd"),
-                    price_usd=item.get("priceUsd"),
+                    # fullyDilutedValuation is the market cap for these tokens
+                    market_cap_usd=float(fdv) if fdv else None,
+                    liquidity_usd=float(liquidity) if liquidity else None,
+                    price_usd=float(price) if price else None,
                     metadata=item,
                 )
                 tokens.append(token)
@@ -163,6 +171,11 @@ class MoralisClient:
 
             tokens = []
             for item in data.get("result", []):
+                # Parse numeric values - API returns strings for some fields
+                fdv = item.get("fullyDilutedValuation")
+                liquidity = item.get("liquidity")
+                price = item.get("priceUsd")
+
                 token = TokenData(
                     token_address=item.get("tokenAddress", ""),
                     name=item.get("name", "Unknown"),
@@ -170,9 +183,9 @@ class MoralisClient:
                     created_at=datetime.fromisoformat(
                         item.get("createdAt", datetime.utcnow().isoformat())
                     ),
-                    market_cap_usd=item.get("marketCapUsd"),
-                    liquidity_usd=item.get("liquidityUsd"),
-                    price_usd=item.get("priceUsd"),
+                    market_cap_usd=float(fdv) if fdv else None,
+                    liquidity_usd=float(liquidity) if liquidity else None,
+                    price_usd=float(price) if price else None,
                     metadata={**item, "is_graduated": True},
                 )
                 tokens.append(token)
@@ -255,21 +268,50 @@ class MoralisClient:
 
         return results
 
-    async def get_token_price(
+    async def get_aggregated_pair_stats(
         self,
         token_address: str
-    ) -> Optional[Dict[str, float]]:
+    ) -> Optional[Dict[str, Any]]:
         """
-        Get current price and market data for a token.
+        Get aggregated pair statistics for a token across all DEX pairs.
 
-        Fetches both price and metadata to calculate market cap properly
-        for new PumpFun tokens.
+        Returns volume, liquidity, and price change data.
 
         Args:
             token_address: Solana token address
 
         Returns:
-            Dictionary with price, market_cap, liquidity or None
+            Dictionary with aggregated stats or None
+        """
+        if self.use_mock:
+            return {
+                "totalLiquidityUsd": random.uniform(1000, 1000000),
+                "volume24h": random.uniform(100, 100000),
+                "priceChange24h": random.uniform(-50, 100),
+            }
+
+        try:
+            endpoint = self.AGGREGATED_PAIR_STATS_ENDPOINT.format(address=token_address)
+            data = await self._make_request(endpoint)
+            return data
+        except httpx.HTTPError as e:
+            print(f"Error fetching pair stats for {token_address[:8]}...: {e}")
+            return None
+
+    async def get_token_price(
+        self,
+        token_address: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get current price and comprehensive market data for a token.
+
+        Fetches price, pair stats, and metadata to get complete data.
+
+        Args:
+            token_address: Solana token address
+
+        Returns:
+            Dictionary with price, market_cap, liquidity, price_change_24h, volume_24h or None
         """
         if self.use_mock:
             return self._generate_mock_price()
@@ -279,32 +321,56 @@ class MoralisClient:
             price_endpoint = f"/token/mainnet/{token_address}/price"
             price_data = await self._make_request(price_endpoint)
 
-            price_usd = price_data.get("usdPrice", 0)
-            market_cap = price_data.get("marketCap", 0)
-            liquidity = price_data.get("liquidity", 0)
+            price_usd = float(price_data.get("usdPrice", 0) or 0)
 
-            # If no market cap from price endpoint, try metadata for FDV or calculate it
-            if not market_cap:
-                try:
-                    metadata_endpoint = f"/token/mainnet/{token_address}/metadata"
-                    metadata = await self._make_request(metadata_endpoint)
+            # Initialize values
+            market_cap = 0.0
+            liquidity = 0.0
+            price_change_24h = None
+            volume_24h = None
 
-                    # Try fullyDilutedValue first
-                    fdv = metadata.get("fullyDilutedValue")
-                    if fdv:
-                        market_cap = float(fdv)
-                    else:
-                        # Calculate from price * supply
-                        total_supply = metadata.get("totalSupplyFormatted")
-                        if total_supply and price_usd:
-                            market_cap = float(total_supply) * price_usd
-                except Exception as e:
-                    print(f"Could not fetch metadata for {token_address[:8]}...: {e}")
+            # Get aggregated pair stats for liquidity, volume, and price change
+            try:
+                pair_stats = await self.get_aggregated_pair_stats(token_address)
+                if pair_stats:
+                    # Extract values from pair stats - handle both string and numeric values
+                    liq = pair_stats.get("totalLiquidityUsd") or pair_stats.get("pairTotalLiquidityUsd")
+                    if liq:
+                        liquidity = float(liq)
+
+                    vol = pair_stats.get("volume24h") or pair_stats.get("totalVolume24h")
+                    if vol:
+                        volume_24h = float(vol)
+
+                    pchange = pair_stats.get("priceChange24h") or pair_stats.get("pricePercentChange24h")
+                    if pchange is not None:
+                        price_change_24h = float(pchange)
+            except Exception as e:
+                print(f"Could not fetch pair stats for {token_address[:8]}...: {e}")
+
+            # Get market cap from metadata
+            try:
+                metadata_endpoint = f"/token/mainnet/{token_address}/metadata"
+                metadata = await self._make_request(metadata_endpoint)
+
+                # Try fullyDilutedValue first
+                fdv = metadata.get("fullyDilutedValuation") or metadata.get("fullyDilutedValue")
+                if fdv:
+                    market_cap = float(fdv)
+                else:
+                    # Calculate from price * supply
+                    total_supply = metadata.get("totalSupplyFormatted") or metadata.get("totalSupply")
+                    if total_supply and price_usd:
+                        market_cap = float(total_supply) * price_usd
+            except Exception as e:
+                print(f"Could not fetch metadata for {token_address[:8]}...: {e}")
 
             return {
                 "price_usd": price_usd,
                 "market_cap_usd": market_cap,
                 "liquidity_usd": liquidity,
+                "price_change_24h": price_change_24h,
+                "volume_24h": volume_24h,
             }
 
         except httpx.HTTPError as e:
@@ -424,13 +490,15 @@ class MoralisClient:
 
         return tokens
 
-    def _generate_mock_price(self) -> Dict[str, float]:
+    def _generate_mock_price(self) -> Dict[str, Any]:
         """Generate mock price data."""
         market_cap = random.uniform(1000, 10000000)
         return {
             "price_usd": random.uniform(0.0000001, 0.01),
             "market_cap_usd": market_cap,
             "liquidity_usd": market_cap * random.uniform(0.01, 0.3),
+            "price_change_24h": random.uniform(-50, 100),
+            "volume_24h": random.uniform(100, 100000),
         }
 
 
