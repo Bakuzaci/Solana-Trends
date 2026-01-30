@@ -54,16 +54,30 @@ async def snapshot_job():
 
     async with async_session_maker() as session:
         try:
-            # Fetch new tokens
+            # Fetch new tokens from PumpFun
             print("Fetching new tokens...")
             new_tokens = await fetch_new_tokens(limit=100)
-            print(f"Fetched {len(new_tokens)} tokens")
+            print(f"Fetched {len(new_tokens)} new tokens")
+
+            # Also fetch graduated tokens (these have real liquidity and DEX pairs)
+            print("Fetching graduated tokens...")
+            graduated_tokens = await fetch_graduated_tokens(limit=50)
+            print(f"Fetched {len(graduated_tokens)} graduated tokens")
+
+            # Combine tokens, avoiding duplicates
+            seen_addresses = set()
+            all_tokens = []
+            for t in new_tokens + graduated_tokens:
+                if t.token_address not in seen_addresses:
+                    seen_addresses.add(t.token_address)
+                    all_tokens.append(t)
+            print(f"Processing {len(all_tokens)} unique tokens")
 
             # Process and store tokens
             tokens_created = 0
             tokens_updated = 0
 
-            for token_data in new_tokens:
+            for token_data in all_tokens:
                 # Check if token already exists
                 existing = await session.execute(
                     select(Token).where(Token.token_address == token_data.token_address)
@@ -79,6 +93,9 @@ async def snapshot_job():
                         token_data.symbol
                     )
 
+                    # Check if this is a graduated token
+                    is_graduated = token_data.metadata.get("is_graduated", False)
+
                     # Create new token record
                     new_token = Token(
                         token_address=token_data.token_address,
@@ -89,6 +106,7 @@ async def snapshot_job():
                         primary_category=primary_cat,
                         sub_category=sub_cat,
                         detected_keywords=",".join(keywords) if keywords else None,
+                        is_graduated=is_graduated,
                     )
                     session.add(new_token)
                     tokens_created += 1
@@ -96,8 +114,8 @@ async def snapshot_job():
             await session.commit()
             print(f"Tokens - Created: {tokens_created}, Updated: {tokens_updated}")
 
-            # Fetch prices for all tokens (PumpFun endpoint doesn't include market cap)
-            new_token_addresses = [t.token_address for t in new_tokens]
+            # Fetch prices for all tokens
+            new_token_addresses = [t.token_address for t in all_tokens]
             if new_token_addresses:
                 print(f"Fetching prices for {len(new_token_addresses)} tokens...")
                 prices = await fetch_token_prices(new_token_addresses)
