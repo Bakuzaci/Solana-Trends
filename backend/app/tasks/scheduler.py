@@ -610,13 +610,25 @@ async def start_scheduler() -> AsyncIOScheduler:
     # Start the scheduler
     scheduler.start()
 
-    # Run initial jobs
-    print("Running initial data collection...")
-    try:
-        await snapshot_job()
-        await aggregate_job()
-    except Exception as e:
-        print(f"Warning: Initial job run failed: {e}")
+    # Schedule initial jobs to run after a short delay (non-blocking)
+    # This allows the app to start responding to health checks quickly
+    print("Scheduling initial data collection...")
+    scheduler.add_job(
+        snapshot_job,
+        trigger="date",  # Run once immediately
+        id="initial_snapshot_job",
+        name="Initial snapshot fetch",
+        replace_existing=True,
+        misfire_grace_time=300,
+    )
+    scheduler.add_job(
+        aggregate_job,
+        trigger="date",  # Run once immediately
+        id="initial_aggregate_job",
+        name="Initial aggregation",
+        replace_existing=True,
+        misfire_grace_time=300,
+    )
 
     return scheduler
 

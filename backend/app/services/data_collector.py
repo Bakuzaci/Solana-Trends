@@ -379,31 +379,11 @@ class MoralisClient:
                     if vol is not None:
                         volume_24h = float(vol)
 
-            # If no pairs data, fallback to price endpoint
-            if not price_usd:
-                try:
-                    price_endpoint = f"/token/mainnet/{token_address}/price"
-                    price_data = await self._make_request(price_endpoint)
-                    price_usd = float(price_data.get("usdPrice", 0) or 0)
-                except Exception as e:
-                    print(f"Could not fetch price for {token_address[:8]}...: {e}")
-
-            # Get market cap from metadata
-            try:
-                metadata_endpoint = f"/token/mainnet/{token_address}/metadata"
-                metadata = await self._make_request(metadata_endpoint)
-
-                # Try fullyDilutedValuation first
-                fdv = metadata.get("fullyDilutedValuation") or metadata.get("fullyDilutedValue")
-                if fdv:
-                    market_cap = float(fdv)
-                else:
-                    # Calculate from price * supply
-                    total_supply = metadata.get("totalSupplyFormatted") or metadata.get("totalSupply")
-                    if total_supply and price_usd:
-                        market_cap = float(total_supply) * price_usd
-            except Exception as e:
-                print(f"Could not fetch metadata for {token_address[:8]}...: {e}")
+            # Note: We skip the /price and /metadata endpoints for tokens
+            # without pairs data as they often return 401 Unauthorized.
+            # The pairs endpoint provides all necessary trading data for active tokens.
+            # Tokens without pairs are likely still on bonding curve and we have their
+            # data from the pumpfun/new or pumpfun/graduated endpoints.
 
             return {
                 "price_usd": price_usd,
