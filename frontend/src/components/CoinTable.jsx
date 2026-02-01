@@ -258,11 +258,11 @@ export default function CoinTable({ coins = [], averageMarketCap = 0 }) {
                       {coin.address && (
                         <>
                           <a
-                            href={`https://axiom.trade/t/${coin.address}`}
+                            href={`https://vertigo.sh/tokens/${coin.address}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-blue-400 hover:text-blue-300 transition-colors"
-                            title="View on Axiom"
+                            className="text-green-400 hover:text-green-300 transition-colors"
+                            title="Trade on Vertigo"
                           >
                             <ExternalLinkIcon />
                           </a>
