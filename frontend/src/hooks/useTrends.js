@@ -5,7 +5,10 @@ import {
   fetchCoins,
   fetchHistory,
   fetchBreakoutMetas,
-  fetchTrendDetail
+  fetchTrendDetail,
+  searchCoins,
+  fetchMetaRelationships,
+  fetchTrendingMetas,
 } from '../api/client';
 
 // Hook to fetch all trends
@@ -87,4 +90,33 @@ export const useTopAccelerating = (timeWindow = '24h', limit = 5) => {
 // Hook for trend coins (alias)
 export const useTrendCoins = (category, subCategory, timeWindow = '24h', graduatedOnly = false) => {
   return useCoins(category, subCategory, 50, graduatedOnly);
+};
+
+// Hook to search for coins and related metas
+export const useSearch = (query, graduatedOnly = false) => {
+  return useQuery({
+    queryKey: ['search', query, graduatedOnly],
+    queryFn: () => searchCoins(query, graduatedOnly),
+    enabled: query && query.length >= 2,
+    staleTime: 30000,
+  });
+};
+
+// Hook to fetch meta relationships
+export const useMetaRelationships = (source = null) => {
+  return useQuery({
+    queryKey: ['metaRelationships', source],
+    queryFn: () => fetchMetaRelationships(source),
+    staleTime: 60000,
+  });
+};
+
+// Hook to fetch trending metas
+export const useTrendingMetas = () => {
+  return useQuery({
+    queryKey: ['trendingMetas'],
+    queryFn: fetchTrendingMetas,
+    staleTime: 60000,
+    refetchInterval: 120000,
+  });
 };

@@ -4,6 +4,7 @@ import { useTrends } from '../hooks/useTrends';
 import TimeWindowToggle from './TimeWindowToggle';
 import SortSelect from './SortSelect';
 import TrendCard from './TrendCard';
+import SearchBar from './SearchBar';
 
 /**
  * Format currency values
@@ -79,12 +80,14 @@ export default function Dashboard() {
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
               <h1 className="text-2xl font-semibold tracking-tight">
-                <span className="text-purple-400">TrendRadar</span><span className="text-gray-500">.Sol</span>
+                <span className="text-purple-400">PayAttention</span><span className="text-gray-500">.Sol</span>
               </h1>
               <p className="text-gray-500 text-sm mt-1 font-light">
                 Real-time Solana meme coin intelligence
               </p>
             </div>
+            {/* Search Bar */}
+            <SearchBar />
             <div className="flex items-center gap-4">
               {/* Graduated Only Toggle */}
               <button
@@ -196,7 +199,7 @@ export default function Dashboard() {
       {/* Footer */}
       <footer className="border-t border-white/5 py-6">
         <div className="max-w-6xl mx-auto px-6 text-center text-gray-600 text-sm font-light">
-          <p>TrendRadar.Sol • Real-time data</p>
+          <p>PayAttention.Sol • Real-time data</p>
         </div>
       </footer>
     </div>

@@ -115,3 +115,53 @@ export const fetchTrendDetail = async (category, subCategory) => {
     return trend || null;
   }
 };
+
+// Search for coins and related metas
+export const searchCoins = async (query, graduatedOnly = false) => {
+  try {
+    const response = await fetch(
+      `${API_URL}/api/search/coins?q=${encodeURIComponent(query)}&graduated_only=${graduatedOnly}`
+    );
+    const data = await handleResponse(response);
+    // Map API field names to what components expect
+    return {
+      ...data,
+      coins: (data.coins || []).map(coin => ({
+        ...coin,
+        address: coin.token_address,
+        market_cap: coin.market_cap_usd,
+        liquidity: coin.liquidity_usd,
+        price_change: coin.price_change_24h,
+        volume: coin.volume_24h,
+      })),
+    };
+  } catch (error) {
+    console.warn('Search API unavailable:', error.message);
+    return { query, coins: [], related_metas: [], suggestions: [] };
+  }
+};
+
+// Fetch meta relationships
+export const fetchMetaRelationships = async (source = null) => {
+  try {
+    const url = source
+      ? `${API_URL}/api/search/metas?source=${encodeURIComponent(source)}`
+      : `${API_URL}/api/search/metas`;
+    const response = await fetch(url);
+    return handleResponse(response);
+  } catch (error) {
+    console.warn('Meta relationships API unavailable:', error.message);
+    return [];
+  }
+};
+
+// Fetch trending metas
+export const fetchTrendingMetas = async () => {
+  try {
+    const response = await fetch(`${API_URL}/api/search/trending`);
+    return handleResponse(response);
+  } catch (error) {
+    console.warn('Trending metas API unavailable:', error.message);
+    return [];
+  }
+};

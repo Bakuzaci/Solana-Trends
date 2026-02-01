@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     frontend_url: str = "http://localhost:5173"
 
     # Application settings
-    app_name: str = "TrendRadar.Sol"
+    app_name: str = "PayAttention.Sol"
     debug: bool = False
 
     @property

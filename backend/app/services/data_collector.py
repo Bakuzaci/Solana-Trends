@@ -2,7 +2,8 @@
 Data collection service for fetching Solana token data.
 
 Uses Moralis API for real data or generates mock data when
-no API key is configured.
+no API key is configured. Falls back to web-discovered tokens
+for more realistic mock data.
 """
 import asyncio
 import random
@@ -13,6 +14,12 @@ from dataclasses import dataclass, field
 import httpx
 
 from ..config import settings
+from .web_token_discovery import (
+    discover_tokens_from_web,
+    get_real_token_addresses,
+    get_cached_tokens,
+    DiscoveredToken,
+)
 
 
 @dataclass
@@ -103,7 +110,8 @@ class MoralisClient:
             List of TokenData objects
         """
         if self.use_mock:
-            return self._generate_mock_tokens(limit)
+            # Use async mock generation with real web-discovered tokens
+            return await self._generate_mock_tokens_async(limit)
 
         try:
             data = await self._make_request(
@@ -145,8 +153,8 @@ class MoralisClient:
 
         except httpx.HTTPError as e:
             print(f"Error fetching tokens from Moralis: {e}")
-            # Fallback to mock data on error
-            return self._generate_mock_tokens(limit)
+            # Fallback to web-discovered tokens on error
+            return await self._generate_mock_tokens_async(limit)
 
     async def get_graduated_pumpfun_tokens(
         self,
@@ -431,77 +439,127 @@ class MoralisClient:
 
         return results
 
-    def _generate_mock_tokens(self, count: int = 100) -> List[TokenData]:
+    async def _generate_mock_tokens_async(self, count: int = 100) -> List[TokenData]:
         """
-        Generate mock token data for testing.
+        Generate mock token data using web-discovered real tokens.
+
+        Uses real Solana token addresses discovered from DexScreener,
+        Jupiter, and other sources to make mock data realistic.
 
         Args:
             count: Number of mock tokens to generate
 
         Returns:
-            List of mock TokenData objects
+            List of mock TokenData objects with real addresses
         """
-        # Real Solana meme coin addresses for testing Birdeye/Solscan links
-        REAL_TOKEN_ADDRESSES = {
-            # Dogs
-            "BONK": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
-            "WIF": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
-            # Cats
-            "MEW": "MEW1gQWJ3nEXg2qgERiKu7FAFj79PHvQVREQUzScPP5",
-            "POPCAT": "7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr",
-            # Celebrities
-            "TRUMP": "6p6xgHyF7AeE6TZkSmFsko444wqoP15icUSqi2jfGiPN",
-            # Memes
-            "FARTCOIN": "9BB6NFEcjBCtnNLFko2FqVQBq8HHM13kCyYcdQbgpump",
-        }
-
-        mock_names = [
-            # Dogs - use real addresses where available
-            ("Bonk", "BONK"), ("dogwifhat", "WIF"), ("PuppyCoin", "PUPPY"),
-            ("WoofToken", "WOOF"), ("CorgiMoon", "CORGI"),
-            # Cats
-            ("cat in a dogs world", "MEW"), ("Popcat", "POPCAT"), ("MeowToken", "MEOW"),
-            ("WhiskersCoin", "WHISK"), ("NyanSol", "NYAN"),
-            # Frogs
-            ("PepeCoin", "PEPE"), ("FrogMoon", "FROG"), ("KermitToken", "KERMIT"),
-            ("ToadCoin", "TOAD"), ("RibbitSol", "RIBBIT"),
-            # Memes
-            ("Fartcoin", "FARTCOIN"), ("ChadToken", "CHAD"), ("BasedCoin", "BASED"),
-            ("StonksMoon", "STONKS"), ("HodlToken", "HODL"),
-            # AI
-            ("GPTCoin", "GPT"), ("AIToken", "AI"), ("BotMoon", "BOT"),
-            ("NeuralCoin", "NEURAL"), ("ChatToken", "CHAT"),
-            # Celebrities
-            ("Official Trump", "TRUMP"), ("ElonCoin", "ELON"), ("MuskMoon", "MUSK"),
-            # Food
-            ("PizzaCoin", "PIZZA"), ("BurgerToken", "BURGER"), ("TacoMoon", "TACO"),
-            # Abstract
-            ("MoonCoin", "MOON"), ("RocketToken", "ROCKET"), ("DiamondHands", "DIAMOND"),
-            ("GemToken", "GEM"), ("StarMoon", "STAR"),
-            # Random
-            ("YoloCoin", "YOLO"), ("BruhToken", "BRUH"), ("VibeCoin", "VIBE"),
-            ("LolToken", "LOL"), ("MemeKing", "MEME"),
-        ]
+        # Discover real tokens from web sources
+        discovered = await discover_tokens_from_web()
+        real_addresses = get_real_token_addresses()
 
         tokens = []
         now = datetime.utcnow()
 
-        for i in range(count):
-            # Select a random base name or generate a new one
-            if i < len(mock_names):
-                name, symbol = mock_names[i]
+        # First, add discovered tokens with real data
+        for i, disc_token in enumerate(discovered[:min(count, len(discovered))]):
+            # Use discovered market cap or generate realistic one
+            if disc_token.market_cap:
+                market_cap = disc_token.market_cap * random.uniform(0.8, 1.2)
             else:
-                idx = random.randint(0, len(mock_names) - 1)
-                base_name, base_symbol = mock_names[idx]
+                market_cap = random.uniform(100000, 50000000)
+
+            liquidity = market_cap * random.uniform(0.01, 0.3)
+            price = random.uniform(0.0000001, 0.01)
+
+            # Random creation time in the last 7 days
+            created_at = now - timedelta(
+                days=random.randint(0, 7),
+                hours=random.randint(0, 23),
+                minutes=random.randint(0, 59)
+            )
+
+            token = TokenData(
+                token_address=disc_token.address or self._generate_random_address(),
+                name=disc_token.name,
+                symbol=disc_token.symbol,
+                created_at=created_at,
+                market_cap_usd=market_cap,
+                liquidity_usd=liquidity,
+                price_usd=price,
+                metadata={"source": disc_token.source}
+            )
+            tokens.append(token)
+
+        # If we need more tokens, generate additional ones with themed names
+        remaining = count - len(tokens)
+        if remaining > 0:
+            additional = self._generate_themed_tokens(remaining, real_addresses)
+            tokens.extend(additional)
+
+        print(f"Generated {len(tokens)} tokens ({len(discovered)} from web sources)")
+        return tokens
+
+    def _generate_random_address(self) -> str:
+        """Generate a random Solana-like address."""
+        return "".join(random.choices(
+            "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz",
+            k=44
+        ))
+
+    def _generate_themed_tokens(
+        self,
+        count: int,
+        real_addresses: Dict[str, str]
+    ) -> List[TokenData]:
+        """Generate themed mock tokens with varied names."""
+        themes = {
+            "dogs": [
+                ("Shiba Sol", "SHIBSOL"), ("Doge King", "DOGEKING"), ("Puppy Moon", "PUPMOON"),
+                ("Woof Finance", "WOOFFI"), ("Corgi Cash", "CORGICASH"),
+            ],
+            "cats": [
+                ("Kitty Coin", "KITTY"), ("Meow Money", "MEOWMONEY"), ("Cat Lord", "CATLORD"),
+                ("Whiskers Finance", "WHISKFI"), ("Nyan Token", "NYANTOKEN"),
+            ],
+            "frogs": [
+                ("Frog King", "FROGKING"), ("Pepe Classic", "PEPEC"), ("Kek Token", "KEK"),
+                ("Toad Lord", "TOADLORD"), ("Ribbit Finance", "RIBBITFI"),
+            ],
+            "ai": [
+                ("Neural Net", "NEURALNET"), ("AI Agent", "AIAGENT"), ("Bot Token", "BOTTOKEN"),
+                ("GPT Coin", "GPTCOIN"), ("Deep Mind Sol", "DEEPSOL"),
+            ],
+            "politics": [
+                ("Freedom Coin", "FREEDOM"), ("Vote Token", "VOTE"), ("Democracy Sol", "DEMO"),
+                ("Liberty Coin", "LIBERTY"), ("Republic Token", "REPUBLIC"),
+            ],
+            "food": [
+                ("Pizza Token", "PIZZATOKEN"), ("Burger Coin", "BURGERCOIN"), ("Taco Sol", "TACOSOL"),
+                ("Ramen Finance", "RAMENFI"), ("Sushi Moon", "SUSHIMOON"),
+            ],
+            "abstract": [
+                ("Moon Shot", "MOONSHOT"), ("Rocket Fuel", "ROCKETFUEL"), ("Diamond Sol", "DIAMONDSOL"),
+                ("Gem Hunter", "GEMHUNTER"), ("Star Token", "STARTOKEN"),
+            ],
+        }
+
+        tokens = []
+        now = datetime.utcnow()
+        all_names = []
+        for theme_names in themes.values():
+            all_names.extend(theme_names)
+
+        for i in range(count):
+            if i < len(all_names):
+                name, symbol = all_names[i]
+            else:
+                idx = random.randint(0, len(all_names) - 1)
+                base_name, base_symbol = all_names[idx]
                 suffix = random.randint(1, 999)
-                name = f"{base_name}{suffix}"
+                name = f"{base_name} {suffix}"
                 symbol = f"{base_symbol}{suffix}"
 
             # Use real address if available, otherwise generate random
-            address = REAL_TOKEN_ADDRESSES.get(
-                symbol,
-                "".join(random.choices("123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz", k=44))
-            )
+            address = real_addresses.get(symbol, self._generate_random_address())
 
             # Random creation time in the last 24 hours
             created_at = now - timedelta(
@@ -524,6 +582,54 @@ class MoralisClient:
                 price_usd=price,
             )
             tokens.append(token)
+
+        return tokens
+
+    def _generate_mock_tokens(self, count: int = 100) -> List[TokenData]:
+        """
+        Synchronous wrapper for backward compatibility.
+        Uses cached tokens if available, otherwise generates basic mocks.
+        """
+        # Use cached web-discovered tokens if available
+        cached = get_cached_tokens()
+        real_addresses = get_real_token_addresses()
+
+        tokens = []
+        now = datetime.utcnow()
+
+        # First use cached real tokens
+        for i, disc_token in enumerate(cached[:min(count, len(cached))]):
+            if disc_token.market_cap:
+                market_cap = disc_token.market_cap * random.uniform(0.8, 1.2)
+            else:
+                market_cap = random.uniform(100000, 50000000)
+
+            liquidity = market_cap * random.uniform(0.01, 0.3)
+            price = random.uniform(0.0000001, 0.01)
+
+            created_at = now - timedelta(
+                days=random.randint(0, 7),
+                hours=random.randint(0, 23),
+                minutes=random.randint(0, 59)
+            )
+
+            token = TokenData(
+                token_address=disc_token.address or self._generate_random_address(),
+                name=disc_token.name,
+                symbol=disc_token.symbol,
+                created_at=created_at,
+                market_cap_usd=market_cap,
+                liquidity_usd=liquidity,
+                price_usd=price,
+                metadata={"source": disc_token.source}
+            )
+            tokens.append(token)
+
+        # Generate additional themed tokens if needed
+        remaining = count - len(tokens)
+        if remaining > 0:
+            additional = self._generate_themed_tokens(remaining, real_addresses)
+            tokens.extend(additional)
 
         return tokens
 

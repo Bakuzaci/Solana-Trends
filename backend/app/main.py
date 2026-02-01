@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .database import init_db, close_db
-from .api import trends, acceleration, history
+from .api import trends, acceleration, history, search
 from .tasks.scheduler import start_scheduler, stop_scheduler, snapshot_job, aggregate_job
 
 
@@ -97,6 +97,47 @@ async def trigger_snapshot():
         return {"status": "error", "message": str(e)}
 
 
+@app.post("/api/recategorize-tokens")
+async def recategorize_tokens():
+    """Recategorize all existing tokens using the latest categorizer."""
+    from .database import async_session_maker
+    from .models import Token
+    from .services.categorizer import categorize_token
+    from sqlalchemy.future import select
+
+    try:
+        async with async_session_maker() as session:
+            result = await session.execute(select(Token))
+            tokens = result.scalars().all()
+
+            updated = 0
+            for token in tokens:
+                primary_cat, sub_cat, keywords = categorize_token(
+                    token.name,
+                    token.symbol
+                )
+
+                if primary_cat != token.primary_category or sub_cat != token.sub_category:
+                    token.primary_category = primary_cat
+                    token.sub_category = sub_cat
+                    token.detected_keywords = ",".join(keywords) if keywords else None
+                    updated += 1
+
+            await session.commit()
+
+            # Re-run aggregation to update trend stats
+            await aggregate_job()
+
+            return {
+                "status": "success",
+                "total_tokens": len(tokens),
+                "updated": updated,
+                "message": f"Recategorized {updated} tokens"
+            }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 @app.get("/api/debug/moralis-graduated")
 async def debug_moralis_graduated():
     """Debug endpoint to check Moralis graduated tokens response."""
@@ -135,3 +176,4 @@ async def debug_moralis_graduated():
 app.include_router(trends.router, prefix="/api/trends", tags=["trends"])
 app.include_router(acceleration.router, prefix="/api/acceleration", tags=["acceleration"])
 app.include_router(history.router, prefix="/api/history", tags=["history"])
+app.include_router(search.router, prefix="/api/search", tags=["search"])

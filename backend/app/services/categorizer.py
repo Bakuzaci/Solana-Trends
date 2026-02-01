@@ -177,8 +177,18 @@ TREND_CATEGORIES: Dict[str, Dict[str, List[str]]] = {
     # Tech & AI
     "Technology": {
         "AI & Bots": [
+            # General AI terms
             "ai", "gpt", "bot", "robot", "neural", "machine", "learning",
-            "chat", "assistant", "agent", "llm", "openai", "claude", "gemini"
+            "chat", "assistant", "agent", "llm", "openai", "claude", "gemini",
+            "autonomous", "artificial", "intelligence",
+            # Hot AI agent tokens
+            "clawd", "claw", "openclaw", "molt", "moltbot",
+            "ai16z", "eliza", "elizaos", "degenai",
+            "zerebro", "hyperstition",
+            "griffain", "griffin",
+            "arc", "rig",
+            "goat", "goatseus", "maximus", "truth", "terminal",
+            "virtuals", "virtual", "protocol",
         ],
         "Tech Companies": [
             "apple", "google", "meta", "microsoft", "amazon", "tesla",

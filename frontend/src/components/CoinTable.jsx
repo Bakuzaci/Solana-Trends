@@ -258,11 +258,11 @@ export default function CoinTable({ coins = [], averageMarketCap = 0 }) {
                       {coin.address && (
                         <>
                           <a
-                            href={`https://birdeye.so/token/${coin.address}?chain=solana`}
+                            href={`https://axiom.trade/t/${coin.address}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-blue-400 hover:text-blue-300 transition-colors"
-                            title="View on Birdeye"
+                            title="View on Axiom"
                           >
                             <ExternalLinkIcon />
                           </a>

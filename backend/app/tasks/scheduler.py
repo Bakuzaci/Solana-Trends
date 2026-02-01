@@ -16,13 +16,15 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from ..config import settings
 from ..database import async_session_maker
-from ..models import Token, Snapshot, TrendAggregate
+from ..models import Token, Snapshot, TrendAggregate, MetaRelationship
 from ..services.data_collector import (
     fetch_new_tokens,
     fetch_token_prices,
     fetch_graduated_tokens,
     TokenData,
 )
+from ..services.web_token_discovery import refresh_token_cache
+from ..services.social_listening import discover_meta_relationships
 from ..services.categorizer import categorize_token
 from ..services.acceleration import (
     calculate_acceleration_score,
@@ -401,7 +403,8 @@ async def _aggregate_for_time_window(session, snapshot_time: datetime, time_wind
         snapshots = snapshot_result.scalars().all()
 
         # Calculate aggregate statistics
-        coin_count = len(tokens)
+        # Count only tokens that have snapshot data (not all tokens in category)
+        coin_count = len(snapshots)
         market_caps = [s.market_cap_usd for s in snapshots if s.market_cap_usd]
         total_market_cap = sum(market_caps) if market_caps else 0
         avg_market_cap = total_market_cap / len(market_caps) if market_caps else 0
@@ -580,6 +583,66 @@ async def _get_historical_metrics(
     ]
 
 
+async def web_discovery_job():
+    """
+    Job to refresh web-discovered tokens periodically.
+
+    This supplements Moralis API data with tokens discovered from
+    DexScreener, Jupiter, and other public sources.
+    """
+    print(f"[{datetime.utcnow()}] Refreshing web token discovery cache...")
+    try:
+        tokens = await refresh_token_cache()
+        print(f"[{datetime.utcnow()}] Discovered {len(tokens)} tokens from web sources")
+    except Exception as e:
+        print(f"Error in web discovery job: {e}")
+
+
+async def social_listening_job():
+    """
+    Job to discover meta relationships through social listening.
+
+    Analyzes trending topics to find how metas relate to each other,
+    like how "clawd" spawned "molt" coins.
+    """
+    print(f"[{datetime.utcnow()}] Running social listening for meta relationships...")
+    try:
+        topics, discoveries = await discover_meta_relationships()
+        print(f"[{datetime.utcnow()}] Found {len(topics)} trending topics, {len(discoveries)} relationships")
+
+        # Store new relationships in the database
+        async with async_session_maker() as session:
+            stored = 0
+            for disc in discoveries:
+                # Check if relationship already exists
+                existing = await session.execute(
+                    select(MetaRelationship).where(
+                        and_(
+                            MetaRelationship.source_keyword == disc.source_keyword,
+                            MetaRelationship.related_keyword == disc.related_keyword,
+                        )
+                    )
+                )
+
+                if not existing.scalar():
+                    new_rel = MetaRelationship(
+                        source_keyword=disc.source_keyword,
+                        related_keyword=disc.related_keyword,
+                        relationship_type=disc.relationship_type,
+                        confidence_score=disc.confidence,
+                        discovery_source="social_listening",
+                    )
+                    session.add(new_rel)
+                    stored += 1
+
+            await session.commit()
+            if stored > 0:
+                print(f"[{datetime.utcnow()}] Stored {stored} new meta relationships")
+
+    except Exception as e:
+        print(f"Error in social listening job: {e}")
+
+
 async def start_scheduler() -> AsyncIOScheduler:
     """
     Start the background scheduler.
@@ -607,6 +670,24 @@ async def start_scheduler() -> AsyncIOScheduler:
         replace_existing=True,
     )
 
+    # Add web token discovery job (runs every 30 minutes)
+    scheduler.add_job(
+        web_discovery_job,
+        trigger=IntervalTrigger(minutes=30),
+        id="web_discovery_job",
+        name="Discover tokens from web sources",
+        replace_existing=True,
+    )
+
+    # Add social listening job (runs every hour)
+    scheduler.add_job(
+        social_listening_job,
+        trigger=IntervalTrigger(minutes=60),
+        id="social_listening_job",
+        name="Social listening for meta relationships",
+        replace_existing=True,
+    )
+
     # Start the scheduler
     scheduler.start()
 
@@ -614,10 +695,23 @@ async def start_scheduler() -> AsyncIOScheduler:
     # This allows the app to start responding to health checks quickly
     initial_run_time = datetime.now() + timedelta(seconds=10)
     print(f"Scheduling initial data collection to run at {initial_run_time}...")
+
+    # Run web discovery first to populate token cache
+    scheduler.add_job(
+        web_discovery_job,
+        trigger="date",
+        run_date=initial_run_time,
+        id="initial_web_discovery_job",
+        name="Initial web token discovery",
+        replace_existing=True,
+        misfire_grace_time=300,
+    )
+
+    # Then run snapshot and aggregation
     scheduler.add_job(
         snapshot_job,
         trigger="date",
-        run_date=initial_run_time,
+        run_date=initial_run_time + timedelta(seconds=5),
         id="initial_snapshot_job",
         name="Initial snapshot fetch",
         replace_existing=True,
@@ -626,7 +720,7 @@ async def start_scheduler() -> AsyncIOScheduler:
     scheduler.add_job(
         aggregate_job,
         trigger="date",
-        run_date=initial_run_time + timedelta(seconds=5),
+        run_date=initial_run_time + timedelta(seconds=10),
         id="initial_aggregate_job",
         name="Initial aggregation",
         replace_existing=True,

@@ -132,3 +132,76 @@ class TrendAggregate(Base):
 
     def __repr__(self) -> str:
         return f"<TrendAggregate(category={self.category}, window={self.time_window})>"
+
+
+class MetaRelationship(Base):
+    """
+    Tracks relationships between metas/trends.
+
+    For example, "clawd" meta spawned "molt" coins, or "pepe" theme
+    led to "frog" derivatives. These relationships are discovered
+    through social listening and pattern analysis.
+    """
+    __tablename__ = "meta_relationships"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    # Source meta/trend (the "parent" that spawned derivatives)
+    source_keyword: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    source_category: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Related meta/trend (the "child" spawned from source)
+    related_keyword: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    related_category: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Relationship metadata
+    relationship_type: Mapped[str] = mapped_column(
+        Text, nullable=False, default="derivative"
+    )  # derivative, variant, sequel, parody
+    confidence_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.5)
+    discovered_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+    last_validated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    # Source of discovery (social_listening, pattern_analysis, manual)
+    discovery_source: Mapped[str] = mapped_column(Text, nullable=False, default="pattern_analysis")
+
+    # Unique constraint
+    __table_args__ = (
+        UniqueConstraint(
+            "source_keyword", "related_keyword",
+            name="uix_meta_relationship"
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return f"<MetaRelationship({self.source_keyword} -> {self.related_keyword})>"
+
+
+class SocialMention(Base):
+    """
+    Tracks social media mentions of tokens/metas for social listening.
+
+    Used to discover trending topics and meta relationships.
+    """
+    __tablename__ = "social_mentions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    # The keyword/topic mentioned
+    keyword: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+
+    # Context/co-occurring keywords
+    co_keywords: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Metadata
+    source: Mapped[str] = mapped_column(Text, nullable=False)  # twitter, reddit, telegram, news
+    mention_count: Mapped[int] = mapped_column(Integer, default=1)
+    sentiment_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    discovered_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False, index=True
+    )
+
+    def __repr__(self) -> str:
+        return f"<SocialMention({self.keyword}, count={self.mention_count})>"
