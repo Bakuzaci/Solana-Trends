@@ -1,4 +1,8 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+// Use Railway backend in production, localhost in development
+const API_URL = import.meta.env.VITE_API_URL ||
+  (window.location.hostname === 'localhost'
+    ? 'http://localhost:8000'
+    : 'https://solana-trends-backend-production.up.railway.app');
 
 import { mockTrends, mockCoins, mockHistory, mockBreakoutMetas } from '../mock/data';
 
