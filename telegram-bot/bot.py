@@ -91,6 +91,29 @@ async def fetch_from_acceleration(client: httpx.AsyncClient, time_window: str) -
         return []
 
 
+async def fetch_sol_price() -> dict | None:
+    """Fetch current SOL price from CoinGecko."""
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.get(
+                "https://api.coingecko.com/api/v3/simple/price",
+                params={
+                    "ids": "solana",
+                    "vs_currencies": "usd",
+                    "include_24hr_change": "true"
+                }
+            )
+            response.raise_for_status()
+            data = response.json()
+            return {
+                "price": data["solana"]["usd"],
+                "change_24h": data["solana"].get("usd_24h_change", 0)
+            }
+        except Exception as e:
+            print(f"Error fetching SOL price: {e}")
+            return None
+
+
 def format_coin_entry(rank: int, coin: dict) -> str:
     """Format a single coin entry for display."""
     name = coin.get("name", "Unknown")[:15]
@@ -162,7 +185,15 @@ async def trending_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for i, coin in enumerate(coins[:5], 1):
                 message_parts.append(format_coin_entry(i, coin))
 
-    message_parts.append(f"\n\n🕐 Updated: {datetime.utcnow().strftime('%H:%M UTC')}")
+    # Add SOL price at the bottom
+    sol_data = await fetch_sol_price()
+    if sol_data:
+        sol_change = sol_data["change_24h"]
+        sol_emoji = "🟢" if sol_change >= 0 else "🔴"
+        sol_sign = "+" if sol_change >= 0 else ""
+        message_parts.append(f"\n\n💎 <b>SOL:</b> ${sol_data['price']:.2f} {sol_emoji} {sol_sign}{sol_change:.1f}%")
+
+    message_parts.append(f"\n🕐 Updated: {datetime.utcnow().strftime('%H:%M UTC')}")
     message_parts.append("💜 <a href='https://payattentiondotsol.vercel.app'>PayAttention.Sol</a>")
 
     await update.message.reply_html("\n".join(message_parts), disable_web_page_preview=True)

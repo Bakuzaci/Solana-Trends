@@ -103,12 +103,22 @@ async def get_trending_coins(
     result = await db.execute(tokens_query)
     tokens = {t.token_address: t for t in result.scalars().all()}
 
+    # Symbols/names to exclude (copycat tokens)
+    EXCLUDED_SYMBOLS = {"SOL", "SOLANA", "WSOL"}
+    EXCLUDED_NAMES = {"solana", "wrapped solana", "wrapped sol"}
+
     # Calculate changes and build response
     coins_with_change = []
 
     for address, current in current_snapshots.items():
         token = tokens.get(address)
         if not token:
+            continue
+
+        # Skip copycat SOL tokens
+        if token.symbol.upper() in EXCLUDED_SYMBOLS:
+            continue
+        if token.name.lower() in EXCLUDED_NAMES:
             continue
 
         current_cap = current.market_cap_usd or 0
