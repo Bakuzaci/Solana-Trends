@@ -35,8 +35,11 @@ def format_currency(value: float) -> str:
     return f"${value:.2f}"
 
 
-async def fetch_trending_from_dexscreener(chain: str, limit: int = 10) -> list:
-    """Fetch trending tokens from DexScreener for a specific chain."""
+async def fetch_trending_from_dexscreener(chain: str, time_period: str = "h24", limit: int = 10) -> list:
+    """Fetch trending tokens from DexScreener for a specific chain and time period.
+
+    time_period: 'm5', 'h1', 'h6', 'h24' for 5min, 1hr, 6hr, 24hr
+    """
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
             # Get boosted/trending tokens
@@ -45,7 +48,7 @@ async def fetch_trending_from_dexscreener(chain: str, limit: int = 10) -> list:
             data = response.json()
 
             # Filter by chain
-            chain_tokens = [t for t in data if t.get("chainId") == chain][:limit * 2]
+            chain_tokens = [t for t in data if t.get("chainId") == chain][:limit * 3]
 
             if not chain_tokens:
                 return []
@@ -77,6 +80,8 @@ async def fetch_trending_from_dexscreener(chain: str, limit: int = 10) -> list:
                     continue
                 seen.add(address)
 
+                price_changes = pair.get("priceChange", {})
+
                 tokens.append({
                     "token_address": address,
                     "name": base.get("name", "Unknown"),
@@ -84,13 +89,17 @@ async def fetch_trending_from_dexscreener(chain: str, limit: int = 10) -> list:
                     "market_cap": pair.get("marketCap"),
                     "liquidity": pair.get("liquidity", {}).get("usd"),
                     "price": pair.get("priceUsd"),
-                    "change_pct": pair.get("priceChange", {}).get("h24"),
+                    "change_m5": price_changes.get("m5"),
+                    "change_h1": price_changes.get("h1"),
+                    "change_h6": price_changes.get("h6"),
+                    "change_h24": price_changes.get("h24"),
+                    "change_pct": price_changes.get(time_period),  # Selected time period
                     "volume_24h": pair.get("volume", {}).get("h24"),
                     "pair_address": pair.get("pairAddress"),
                 })
 
-            # Sort by market cap
-            tokens.sort(key=lambda x: float(x.get("market_cap") or 0), reverse=True)
+            # Sort by the selected time period's change (top gainers first)
+            tokens.sort(key=lambda x: float(x.get("change_pct") or -999), reverse=True)
             return tokens[:limit]
 
         except Exception as e:
@@ -185,13 +194,43 @@ async def trending_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def chain_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle chain selection callback."""
+    """Handle chain selection callback - show time period selection."""
     query = update.callback_query
     await query.answer()
 
     chain = query.data.replace("chain_", "")
 
-    # Update message to show loading
+    # Show time period selection
+    keyboard = [
+        [
+            InlineKeyboardButton("⚡ 1H", callback_data=f"period_{chain}_h1"),
+            InlineKeyboardButton("📊 6H", callback_data=f"period_{chain}_h6"),
+            InlineKeyboardButton("📅 24H", callback_data=f"period_{chain}_h24"),
+        ],
+        [InlineKeyboardButton("« Back to chains", callback_data="back_to_chains")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    chain_emoji = "☀️" if chain == "solana" else "🔵"
+    chain_name = chain.upper()
+
+    await query.edit_message_text(
+        f"{chain_emoji} <b>{chain_name}</b>\n\nSelect time period for top gainers:",
+        reply_markup=reply_markup,
+        parse_mode="HTML"
+    )
+
+
+async def period_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle time period selection callback - show trending coins."""
+    query = update.callback_query
+    await query.answer()
+
+    # Parse callback data: period_solana_h24
+    parts = query.data.replace("period_", "").split("_")
+    chain = parts[0]
+    time_period = parts[1]
+
     await query.edit_message_text("⏳ Fetching trending coins...")
 
     # Chain config
@@ -200,12 +239,20 @@ async def chain_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "base": {"emoji": "🔵", "name": "BASE", "native": "ethereum", "native_symbol": "ETH"},
     }
 
+    time_labels = {
+        "h1": "1 Hour",
+        "h6": "6 Hours",
+        "h24": "24 Hours",
+    }
+
     config = chain_config.get(chain, chain_config["solana"])
+    time_label = time_labels.get(time_period, "24 Hours")
 
-    # Fetch trending tokens
-    coins = await fetch_trending_from_dexscreener(chain, limit=10)
+    # Fetch trending tokens sorted by selected time period
+    coins = await fetch_trending_from_dexscreener(chain, time_period=time_period, limit=10)
 
-    message_parts = [f"{config['emoji']} <b>TRENDING ON {config['name']}</b>\n"]
+    message_parts = [f"{config['emoji']} <b>TOP GAINERS ON {config['name']}</b>"]
+    message_parts.append(f"<i>By {time_label} change</i>\n")
     message_parts.append("─" * 28)
 
     if not coins:
@@ -224,10 +271,18 @@ async def chain_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     message_parts.append(f"\n🕐 {datetime.utcnow().strftime('%H:%M UTC')}")
 
-    # Add button to switch chains
+    # Navigation buttons
     other_chain = "base" if chain == "solana" else "solana"
     other_config = chain_config[other_chain]
-    keyboard = [[InlineKeyboardButton(f"Switch to {other_config['emoji']} {other_config['name']}", callback_data=f"chain_{other_chain}")]]
+
+    keyboard = [
+        [
+            InlineKeyboardButton("⚡ 1H", callback_data=f"period_{chain}_h1"),
+            InlineKeyboardButton("📊 6H", callback_data=f"period_{chain}_h6"),
+            InlineKeyboardButton("📅 24H", callback_data=f"period_{chain}_h24"),
+        ],
+        [InlineKeyboardButton(f"Switch to {other_config['emoji']} {other_config['name']}", callback_data=f"chain_{other_chain}")]
+    ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await query.edit_message_text(
@@ -238,13 +293,33 @@ async def chain_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def back_to_chains_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Go back to chain selection."""
+    query = update.callback_query
+    await query.answer()
+
+    keyboard = [
+        [
+            InlineKeyboardButton("☀️ Solana", callback_data="chain_solana"),
+            InlineKeyboardButton("🔵 Base", callback_data="chain_base"),
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await query.edit_message_text(
+        "🔥 <b>Choose a chain:</b>",
+        reply_markup=reply_markup,
+        parse_mode="HTML"
+    )
+
+
 async def sol_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Direct command for Solana trending."""
-    await update.message.reply_text("⏳ Fetching Solana trending coins...")
+    """Direct command for Solana trending (24h gainers)."""
+    await update.message.reply_text("⏳ Fetching Solana top gainers...")
 
-    coins = await fetch_trending_from_dexscreener("solana", limit=10)
+    coins = await fetch_trending_from_dexscreener("solana", time_period="h24", limit=10)
 
-    message_parts = ["☀️ <b>TRENDING ON SOLANA</b>\n", "─" * 28]
+    message_parts = ["☀️ <b>TOP GAINERS ON SOLANA</b>", "<i>By 24H change</i>\n", "─" * 28]
 
     if not coins:
         message_parts.append("\n<i>No trending coins found</i>")
@@ -265,12 +340,12 @@ async def sol_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def base_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Direct command for Base trending."""
-    await update.message.reply_text("⏳ Fetching Base trending coins...")
+    """Direct command for Base trending (24h gainers)."""
+    await update.message.reply_text("⏳ Fetching Base top gainers...")
 
-    coins = await fetch_trending_from_dexscreener("base", limit=10)
+    coins = await fetch_trending_from_dexscreener("base", time_period="h24", limit=10)
 
-    message_parts = ["🔵 <b>TRENDING ON BASE</b>\n", "─" * 28]
+    message_parts = ["🔵 <b>TOP GAINERS ON BASE</b>", "<i>By 24H change</i>\n", "─" * 28]
 
     if not coins:
         message_parts.append("\n<i>No trending coins found</i>")
@@ -308,6 +383,8 @@ def main():
     app.add_handler(CommandHandler("sol", sol_command))
     app.add_handler(CommandHandler("base", base_command))
     app.add_handler(CallbackQueryHandler(chain_callback, pattern="^chain_"))
+    app.add_handler(CallbackQueryHandler(period_callback, pattern="^period_"))
+    app.add_handler(CallbackQueryHandler(back_to_chains_callback, pattern="^back_to_chains$"))
 
     print("✅ Bot is running!")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
