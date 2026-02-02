@@ -42,65 +42,108 @@ async def fetch_trending_from_dexscreener(chain: str, time_period: str = "h24", 
     """
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
-            # Get boosted/trending tokens
-            response = await client.get(f"{DEXSCREENER_URL}/token-boosts/top/v1")
-            response.raise_for_status()
-            data = response.json()
-
-            # Filter by chain
-            chain_tokens = [t for t in data if t.get("chainId") == chain][:limit * 3]
-
-            if not chain_tokens:
-                return []
-
-            # Get token addresses to fetch detailed data
-            addresses = [t.get("tokenAddress") for t in chain_tokens if t.get("tokenAddress")]
-
-            if not addresses:
-                return []
-
-            # Fetch detailed pair data
-            address_str = ",".join(addresses[:30])
-            pairs_response = await client.get(f"{DEXSCREENER_URL}/latest/dex/tokens/{address_str}")
-            pairs_response.raise_for_status()
-            pairs_data = pairs_response.json()
-
-            # Build token list with market data
-            tokens = []
+            all_tokens = []
             seen = set()
 
-            for pair in pairs_data.get("pairs", []):
-                if pair.get("chainId") != chain:
+            # Search multiple popular terms to get diverse tokens
+            search_terms = ["pump", "pepe", "dog", "cat", "ai", "meme", "moon", "inu", "wojak", "chad"]
+
+            for term in search_terms[:5]:  # Limit searches to avoid rate limits
+                try:
+                    response = await client.get(
+                        f"{DEXSCREENER_URL}/latest/dex/search",
+                        params={"q": term}
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+
+                    for pair in data.get("pairs", []):
+                        if pair.get("chainId") != chain:
+                            continue
+
+                        base = pair.get("baseToken", {})
+                        address = base.get("address", "")
+
+                        if address in seen:
+                            continue
+                        seen.add(address)
+
+                        price_changes = pair.get("priceChange", {})
+                        change_val = price_changes.get(time_period)
+
+                        # Only include tokens with valid change data
+                        if change_val is None:
+                            continue
+
+                        all_tokens.append({
+                            "token_address": address,
+                            "name": base.get("name", "Unknown"),
+                            "symbol": base.get("symbol", "???"),
+                            "market_cap": pair.get("marketCap"),
+                            "liquidity": pair.get("liquidity", {}).get("usd"),
+                            "price": pair.get("priceUsd"),
+                            "change_m5": price_changes.get("m5"),
+                            "change_h1": price_changes.get("h1"),
+                            "change_h6": price_changes.get("h6"),
+                            "change_h24": price_changes.get("h24"),
+                            "change_pct": change_val,
+                            "volume_24h": pair.get("volume", {}).get("h24"),
+                            "pair_address": pair.get("pairAddress"),
+                        })
+                except Exception as e:
+                    print(f"Search error for '{term}': {e}")
                     continue
 
-                base = pair.get("baseToken", {})
-                address = base.get("address", "")
+            # Also get boosted tokens for variety
+            try:
+                boost_response = await client.get(f"{DEXSCREENER_URL}/token-boosts/top/v1")
+                boost_response.raise_for_status()
+                boost_data = boost_response.json()
 
-                if address in seen:
-                    continue
-                seen.add(address)
+                chain_boosts = [t for t in boost_data if t.get("chainId") == chain][:20]
+                addresses = [t.get("tokenAddress") for t in chain_boosts if t.get("tokenAddress")]
 
-                price_changes = pair.get("priceChange", {})
+                if addresses:
+                    addr_str = ",".join(addresses[:30])
+                    pairs_resp = await client.get(f"{DEXSCREENER_URL}/latest/dex/tokens/{addr_str}")
+                    pairs_resp.raise_for_status()
 
-                tokens.append({
-                    "token_address": address,
-                    "name": base.get("name", "Unknown"),
-                    "symbol": base.get("symbol", "???"),
-                    "market_cap": pair.get("marketCap"),
-                    "liquidity": pair.get("liquidity", {}).get("usd"),
-                    "price": pair.get("priceUsd"),
-                    "change_m5": price_changes.get("m5"),
-                    "change_h1": price_changes.get("h1"),
-                    "change_h6": price_changes.get("h6"),
-                    "change_h24": price_changes.get("h24"),
-                    "change_pct": price_changes.get(time_period),  # Selected time period
-                    "volume_24h": pair.get("volume", {}).get("h24"),
-                    "pair_address": pair.get("pairAddress"),
-                })
+                    for pair in pairs_resp.json().get("pairs", []):
+                        if pair.get("chainId") != chain:
+                            continue
+
+                        base = pair.get("baseToken", {})
+                        address = base.get("address", "")
+
+                        if address in seen:
+                            continue
+                        seen.add(address)
+
+                        price_changes = pair.get("priceChange", {})
+                        change_val = price_changes.get(time_period)
+
+                        if change_val is None:
+                            continue
+
+                        all_tokens.append({
+                            "token_address": address,
+                            "name": base.get("name", "Unknown"),
+                            "symbol": base.get("symbol", "???"),
+                            "market_cap": pair.get("marketCap"),
+                            "liquidity": pair.get("liquidity", {}).get("usd"),
+                            "price": pair.get("priceUsd"),
+                            "change_pct": change_val,
+                            "volume_24h": pair.get("volume", {}).get("h24"),
+                            "pair_address": pair.get("pairAddress"),
+                        })
+            except Exception as e:
+                print(f"Boost fetch error: {e}")
 
             # Sort by the selected time period's change (top gainers first)
-            tokens.sort(key=lambda x: float(x.get("change_pct") or -999), reverse=True)
-            return tokens[:limit]
+            all_tokens.sort(key=lambda x: float(x.get("change_pct") or -999), reverse=True)
+
+            print(f"[DexScreener] Found {len(all_tokens)} tokens for {chain}/{time_period}")
+            return all_tokens[:limit]
 
         except Exception as e:
             print(f"Error fetching from DexScreener: {e}")
