@@ -56,14 +56,19 @@ async def fetch_trending_coins(time_window: str) -> list:
     """Fetch top trending coins from the API."""
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
-            # Fetch top coins endpoint
+            url = f"{API_URL}/api/trending/coins"
+            print(f"[DEBUG] Fetching: {url} with time_window={time_window}")
             response = await client.get(
-                f"{API_URL}/api/trending/coins",
+                url,
                 params={"time_window": time_window, "limit": 10}
             )
+            print(f"[DEBUG] Response status: {response.status_code}")
             response.raise_for_status()
-            return response.json()
+            data = response.json()
+            print(f"[DEBUG] Got {len(data)} coins for {time_window}")
+            return data
         except httpx.HTTPStatusError as e:
+            print(f"[DEBUG] HTTP error: {e.response.status_code}")
             if e.response.status_code == 404:
                 # Fallback: fetch from acceleration endpoint
                 return await fetch_from_acceleration(client, time_window)
@@ -92,6 +97,7 @@ def format_coin_entry(rank: int, coin: dict) -> str:
     symbol = coin.get("symbol", "???")[:8]
     market_cap = coin.get("market_cap") or coin.get("market_cap_usd") or 0
     change_pct = coin.get("change_pct") or coin.get("price_change_24h") or 0
+    address = coin.get("token_address") or coin.get("address") or ""
 
     # Emoji based on rank
     rank_emoji = ["🥇", "🥈", "🥉"][rank - 1] if rank <= 3 else f"{rank}."
@@ -104,6 +110,11 @@ def format_coin_entry(rank: int, coin: dict) -> str:
     else:
         change_str = "⚪ 0%"
 
+    # Vertigo link
+    if address:
+        vertigo_link = f"<a href='https://vertigo.sh/tokens/{address}'>Trade</a>"
+        return f"{rank_emoji} <b>{symbol}</b> | {format_currency(market_cap)} | {change_str} | {vertigo_link}"
+
     return f"{rank_emoji} <b>{symbol}</b> | {format_currency(market_cap)} | {change_str}"
 
 
@@ -115,11 +126,11 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 Track trending Solana meme coins in real-time!
 
 <b>Commands:</b>
-/trending - View top 10 coins across all time periods
-/top1h - Top coins in the last hour
-/top24h - Top coins in 24 hours
-/top72h - Top coins in 72 hours
-/top168h - Top coins in 7 days
+/trending - View top 5 coins for each time period
+/top1h - Top 5 coins in the last hour
+/top24h - Top 5 coins in 24 hours
+/top72h - Top 5 coins in 72 hours
+/top168h - Top 5 coins in 7 days
 
 Stay ahead of the metas! 🔥
 """
@@ -127,7 +138,7 @@ Stay ahead of the metas! 🔥
 
 
 async def trending_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /trending command - show all time periods."""
+    """Handle /trending command - show top 5 coins for each time period."""
     await update.message.reply_text("⏳ Fetching trending coins...")
 
     message_parts = ["🔥 <b>TRENDING SOLANA COINS</b>\n"]
@@ -148,7 +159,7 @@ async def trending_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not coins:
             message_parts.append("<i>No data available</i>")
         else:
-            for i, coin in enumerate(coins[:10], 1):
+            for i, coin in enumerate(coins[:5], 1):
                 message_parts.append(format_coin_entry(i, coin))
 
     message_parts.append(f"\n\n🕐 Updated: {datetime.utcnow().strftime('%H:%M UTC')}")
@@ -171,7 +182,7 @@ async def top_coins_command(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     }.get(time_window, time_window)
 
     message_parts = [
-        f"🔥 <b>TOP 10 COINS - {tw_label}</b>",
+        f"🔥 <b>TOP 5 COINS - {tw_label}</b>",
         "─" * 30,
         ""
     ]
@@ -179,7 +190,7 @@ async def top_coins_command(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     if not coins:
         message_parts.append("<i>No data available for this time period</i>")
     else:
-        for i, coin in enumerate(coins[:10], 1):
+        for i, coin in enumerate(coins[:5], 1):
             name = coin.get("name", "Unknown")
             symbol = coin.get("symbol", "???")
             market_cap = coin.get("market_cap") or coin.get("market_cap_usd") or 0
@@ -232,6 +243,7 @@ def main():
         return
 
     print("🚀 Starting PayAttention.Sol Telegram Bot...")
+    print(f"📡 API URL: {API_URL}")
 
     # Create application
     app = Application.builder().token(BOT_TOKEN).build()
