@@ -20,6 +20,7 @@ from .web_token_discovery import (
     get_cached_tokens,
     DiscoveredToken,
 )
+from . import dexscreener
 
 
 @dataclass
@@ -96,6 +97,47 @@ class MoralisClient:
             response.raise_for_status()
             return response.json()
 
+    async def _fetch_from_dexscreener(self, limit: int = 100) -> List[TokenData]:
+        """
+        Fetch real token data from DexScreener as fallback.
+
+        Args:
+            limit: Maximum number of tokens to fetch
+
+        Returns:
+            List of TokenData objects with real market data
+        """
+        try:
+            # Get trending tokens from DexScreener
+            dex_tokens = await dexscreener.fetch_trending_tokens(limit)
+
+            # Convert DexScreener TokenData to our TokenData format
+            tokens = []
+            for dt in dex_tokens:
+                token = TokenData(
+                    token_address=dt.token_address,
+                    name=dt.name,
+                    symbol=dt.symbol,
+                    created_at=dt.created_at,
+                    market_cap_usd=dt.market_cap_usd,
+                    liquidity_usd=dt.liquidity_usd,
+                    price_usd=dt.price_usd,
+                    metadata={
+                        "source": "dexscreener",
+                        "price_change_24h": dt.price_change_24h,
+                        "volume_24h": dt.volume_24h,
+                    }
+                )
+                tokens.append(token)
+
+            print(f"[DexScreener fallback] Fetched {len(tokens)} real tokens")
+            return tokens
+
+        except Exception as e:
+            print(f"[DexScreener fallback] Error: {e}")
+            # Last resort: use themed mock tokens
+            return await self._generate_mock_tokens_async(limit)
+
     async def get_new_pumpfun_tokens(
         self,
         limit: int = 100
@@ -110,8 +152,9 @@ class MoralisClient:
             List of TokenData objects
         """
         if self.use_mock:
-            # Use async mock generation with real web-discovered tokens
-            return await self._generate_mock_tokens_async(limit)
+            # Use DexScreener for real data when Moralis isn't available
+            print("[MoralisClient] No API key, falling back to DexScreener")
+            return await self._fetch_from_dexscreener(limit)
 
         try:
             data = await self._make_request(
@@ -153,8 +196,8 @@ class MoralisClient:
 
         except httpx.HTTPError as e:
             print(f"Error fetching tokens from Moralis: {e}")
-            # Fallback to web-discovered tokens on error
-            return await self._generate_mock_tokens_async(limit)
+            # Fallback to DexScreener on error
+            return await self._fetch_from_dexscreener(limit)
 
     async def get_graduated_pumpfun_tokens(
         self,
