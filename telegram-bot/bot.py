@@ -45,10 +45,14 @@ async def fetch_trending_from_dexscreener(chain: str, time_period: str = "h24", 
             all_tokens = []
             seen = set()
 
-            # Search multiple popular terms to get diverse tokens
-            search_terms = ["pump", "pepe", "dog", "cat", "ai", "meme", "moon", "inu", "wojak", "chad"]
+            # Search multiple popular meme coin terms to get diverse real tokens
+            search_terms = [
+                "pepe", "doge", "shib", "wojak", "chad", "mog", "brett",
+                "cat", "dog", "frog", "ai", "gpt", "trump", "biden",
+                "sol", "eth", "base", "pump", "moon", "inu", "elon"
+            ]
 
-            for term in search_terms[:5]:  # Limit searches to avoid rate limits
+            for term in search_terms[:8]:  # Search more terms for variety
                 try:
                     response = await client.get(
                         f"{DEXSCREENER_URL}/latest/dex/search",
@@ -70,9 +74,12 @@ async def fetch_trending_from_dexscreener(chain: str, time_period: str = "h24", 
 
                         price_changes = pair.get("priceChange", {})
                         change_val = price_changes.get(time_period)
+                        liquidity = pair.get("liquidity", {}).get("usd") or 0
 
-                        # Only include tokens with valid change data
+                        # Only include tokens with valid change data and minimum liquidity
                         if change_val is None:
+                            continue
+                        if float(liquidity) < 10000:  # Min $10k liquidity
                             continue
 
                         all_tokens.append({
@@ -94,50 +101,6 @@ async def fetch_trending_from_dexscreener(chain: str, time_period: str = "h24", 
                     print(f"Search error for '{term}': {e}")
                     continue
 
-            # Also get boosted tokens for variety
-            try:
-                boost_response = await client.get(f"{DEXSCREENER_URL}/token-boosts/top/v1")
-                boost_response.raise_for_status()
-                boost_data = boost_response.json()
-
-                chain_boosts = [t for t in boost_data if t.get("chainId") == chain][:20]
-                addresses = [t.get("tokenAddress") for t in chain_boosts if t.get("tokenAddress")]
-
-                if addresses:
-                    addr_str = ",".join(addresses[:30])
-                    pairs_resp = await client.get(f"{DEXSCREENER_URL}/latest/dex/tokens/{addr_str}")
-                    pairs_resp.raise_for_status()
-
-                    for pair in pairs_resp.json().get("pairs", []):
-                        if pair.get("chainId") != chain:
-                            continue
-
-                        base = pair.get("baseToken", {})
-                        address = base.get("address", "")
-
-                        if address in seen:
-                            continue
-                        seen.add(address)
-
-                        price_changes = pair.get("priceChange", {})
-                        change_val = price_changes.get(time_period)
-
-                        if change_val is None:
-                            continue
-
-                        all_tokens.append({
-                            "token_address": address,
-                            "name": base.get("name", "Unknown"),
-                            "symbol": base.get("symbol", "???"),
-                            "market_cap": pair.get("marketCap"),
-                            "liquidity": pair.get("liquidity", {}).get("usd"),
-                            "price": pair.get("priceUsd"),
-                            "change_pct": change_val,
-                            "volume_24h": pair.get("volume", {}).get("h24"),
-                            "pair_address": pair.get("pairAddress"),
-                        })
-            except Exception as e:
-                print(f"Boost fetch error: {e}")
 
             # Sort by the selected time period's change (top gainers first)
             all_tokens.sort(key=lambda x: float(x.get("change_pct") or -999), reverse=True)
