@@ -20,6 +20,7 @@ load_dotenv()
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 API_URL = os.getenv("API_URL", "https://solana-trends-backend-production.up.railway.app")
 DEXSCREENER_URL = "https://api.dexscreener.com"
+GECKOTERMINAL_URL = "https://api.geckoterminal.com/api/v2"
 
 
 def format_currency(value: float) -> str:
@@ -36,80 +37,75 @@ def format_currency(value: float) -> str:
 
 
 async def fetch_trending_from_dexscreener(chain: str, time_period: str = "h24", limit: int = 10) -> list:
-    """Fetch trending tokens from DexScreener for a specific chain and time period.
+    """Fetch trending tokens from GeckoTerminal for a specific chain and time period.
 
-    time_period: 'm5', 'h1', 'h6', 'h24' for 5min, 1hr, 6hr, 24hr
+    time_period: 'h1', 'h6', 'h24' for 1hr, 6hr, 24hr
     """
+    # Map chain names to GeckoTerminal network IDs
+    network_map = {"solana": "solana", "base": "base"}
+    network = network_map.get(chain, chain)
+
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
-            all_tokens = []
+            # Fetch trending pools for the network
+            response = await client.get(
+                f"{GECKOTERMINAL_URL}/networks/{network}/trending_pools",
+                params={"page": 1}
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            pools = data.get("data", [])
+            tokens = []
             seen = set()
 
-            # Search multiple popular meme coin terms to get diverse real tokens
-            search_terms = [
-                "pepe", "doge", "shib", "wojak", "chad", "mog", "brett",
-                "cat", "dog", "frog", "ai", "gpt", "trump", "biden",
-                "sol", "eth", "base", "pump", "moon", "inu", "elon"
-            ]
+            for pool in pools:
+                attr = pool.get("attributes", {})
+                name = attr.get("name", "Unknown")
 
-            for term in search_terms[:8]:  # Search more terms for variety
-                try:
-                    response = await client.get(
-                        f"{DEXSCREENER_URL}/latest/dex/search",
-                        params={"q": term}
-                    )
-                    response.raise_for_status()
-                    data = response.json()
+                # Extract token symbol from pool name (e.g., "PEPE / SOL" -> "PEPE")
+                symbol = name.split(" / ")[0] if " / " in name else name
 
-                    for pair in data.get("pairs", []):
-                        if pair.get("chainId") != chain:
-                            continue
+                if symbol in seen:
+                    continue
+                seen.add(symbol)
 
-                        base = pair.get("baseToken", {})
-                        address = base.get("address", "")
+                # Get price changes
+                price_changes = attr.get("price_change_percentage", {})
+                change_h1 = price_changes.get("h1")
+                change_h6 = price_changes.get("h6")
+                change_h24 = price_changes.get("h24")
 
-                        if address in seen:
-                            continue
-                        seen.add(address)
+                change_map = {"h1": change_h1, "h6": change_h6, "h24": change_h24}
+                change_pct = change_map.get(time_period)
 
-                        price_changes = pair.get("priceChange", {})
-                        change_val = price_changes.get(time_period)
-                        liquidity = pair.get("liquidity", {}).get("usd") or 0
-
-                        # Only include tokens with valid change data and minimum liquidity
-                        if change_val is None:
-                            continue
-                        if float(liquidity) < 10000:  # Min $10k liquidity
-                            continue
-
-                        all_tokens.append({
-                            "token_address": address,
-                            "name": base.get("name", "Unknown"),
-                            "symbol": base.get("symbol", "???"),
-                            "market_cap": pair.get("marketCap"),
-                            "liquidity": pair.get("liquidity", {}).get("usd"),
-                            "price": pair.get("priceUsd"),
-                            "change_m5": price_changes.get("m5"),
-                            "change_h1": price_changes.get("h1"),
-                            "change_h6": price_changes.get("h6"),
-                            "change_h24": price_changes.get("h24"),
-                            "change_pct": change_val,
-                            "volume_24h": pair.get("volume", {}).get("h24"),
-                            "pair_address": pair.get("pairAddress"),
-                        })
-                except Exception as e:
-                    print(f"Search error for '{term}': {e}")
+                if change_pct is None:
                     continue
 
+                pool_address = attr.get("address", "")
+
+                tokens.append({
+                    "token_address": pool_address,
+                    "name": symbol,
+                    "symbol": symbol,
+                    "market_cap": attr.get("market_cap_usd"),
+                    "liquidity": attr.get("reserve_in_usd"),
+                    "price": attr.get("base_token_price_usd"),
+                    "change_h1": change_h1,
+                    "change_h6": change_h6,
+                    "change_h24": change_h24,
+                    "change_pct": float(change_pct) if change_pct else 0,
+                    "volume_24h": attr.get("volume_usd", {}).get("h24"),
+                })
 
             # Sort by the selected time period's change (top gainers first)
-            all_tokens.sort(key=lambda x: float(x.get("change_pct") or -999), reverse=True)
+            tokens.sort(key=lambda x: x.get("change_pct", -999), reverse=True)
 
-            print(f"[DexScreener] Found {len(all_tokens)} tokens for {chain}/{time_period}")
-            return all_tokens[:limit]
+            print(f"[GeckoTerminal] Found {len(tokens)} tokens for {network}/{time_period}")
+            return tokens[:limit]
 
         except Exception as e:
-            print(f"Error fetching from DexScreener: {e}")
+            print(f"Error fetching from GeckoTerminal: {e}")
             return []
 
 
