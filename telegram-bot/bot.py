@@ -1,28 +1,25 @@
 """
-PayAttention.Sol Telegram Bot
+PayAttention Telegram Bot
 
-Simple bot to view trending Solana meme coins at a glance.
+Track trending meme coins on Solana and Base.
 Commands:
-  /trending - Show top 10 trending coins across all time periods
+  /trending - Choose chain and view top trending coins
   /start - Welcome message
 """
 
 import os
-import asyncio
 from datetime import datetime
 from dotenv import load_dotenv
 import httpx
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
 load_dotenv()
 
 # Configuration
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 API_URL = os.getenv("API_URL", "https://solana-trends-backend-production.up.railway.app")
-
-# Time windows to display
-TIME_WINDOWS = ["1h", "24h", "72h", "168h"]
+DEXSCREENER_URL = "https://api.dexscreener.com"
 
 
 def format_currency(value: float) -> str:
@@ -38,67 +35,77 @@ def format_currency(value: float) -> str:
     return f"${value:.2f}"
 
 
-def format_change(current: float, previous: float) -> str:
-    """Format market cap change with absolute and percentage."""
-    if current is None or previous is None or previous == 0:
-        return "- (N/A)"
-
-    change = current - previous
-    pct_change = (change / previous) * 100
-
-    sign = "+" if change >= 0 else ""
-    emoji = "🟢" if change >= 0 else "🔴"
-
-    return f"{emoji} {sign}{format_currency(abs(change))} ({sign}{pct_change:.1f}%)"
-
-
-async def fetch_trending_coins(time_window: str) -> list:
-    """Fetch top trending coins from the API."""
+async def fetch_trending_from_dexscreener(chain: str, limit: int = 10) -> list:
+    """Fetch trending tokens from DexScreener for a specific chain."""
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
-            url = f"{API_URL}/api/trending/coins"
-            print(f"[DEBUG] Fetching: {url} with time_window={time_window}")
-            response = await client.get(
-                url,
-                params={"time_window": time_window, "limit": 10}
-            )
-            print(f"[DEBUG] Response status: {response.status_code}")
+            # Get boosted/trending tokens
+            response = await client.get(f"{DEXSCREENER_URL}/token-boosts/top/v1")
             response.raise_for_status()
             data = response.json()
-            print(f"[DEBUG] Got {len(data)} coins for {time_window}")
-            return data
-        except httpx.HTTPStatusError as e:
-            print(f"[DEBUG] HTTP error: {e.response.status_code}")
-            if e.response.status_code == 404:
-                # Fallback: fetch from acceleration endpoint
-                return await fetch_from_acceleration(client, time_window)
-            raise
+
+            # Filter by chain
+            chain_tokens = [t for t in data if t.get("chainId") == chain][:limit * 2]
+
+            if not chain_tokens:
+                return []
+
+            # Get token addresses to fetch detailed data
+            addresses = [t.get("tokenAddress") for t in chain_tokens if t.get("tokenAddress")]
+
+            if not addresses:
+                return []
+
+            # Fetch detailed pair data
+            address_str = ",".join(addresses[:30])
+            pairs_response = await client.get(f"{DEXSCREENER_URL}/latest/dex/tokens/{address_str}")
+            pairs_response.raise_for_status()
+            pairs_data = pairs_response.json()
+
+            # Build token list with market data
+            tokens = []
+            seen = set()
+
+            for pair in pairs_data.get("pairs", []):
+                if pair.get("chainId") != chain:
+                    continue
+
+                base = pair.get("baseToken", {})
+                address = base.get("address", "")
+
+                if address in seen:
+                    continue
+                seen.add(address)
+
+                tokens.append({
+                    "token_address": address,
+                    "name": base.get("name", "Unknown"),
+                    "symbol": base.get("symbol", "???"),
+                    "market_cap": pair.get("marketCap"),
+                    "liquidity": pair.get("liquidity", {}).get("usd"),
+                    "price": pair.get("priceUsd"),
+                    "change_pct": pair.get("priceChange", {}).get("h24"),
+                    "volume_24h": pair.get("volume", {}).get("h24"),
+                    "pair_address": pair.get("pairAddress"),
+                })
+
+            # Sort by market cap
+            tokens.sort(key=lambda x: float(x.get("market_cap") or 0), reverse=True)
+            return tokens[:limit]
+
         except Exception as e:
-            print(f"Error fetching trending coins: {e}")
+            print(f"Error fetching from DexScreener: {e}")
             return []
 
 
-async def fetch_from_acceleration(client: httpx.AsyncClient, time_window: str) -> list:
-    """Fallback: fetch top accelerating coins."""
-    try:
-        response = await client.get(
-            f"{API_URL}/api/acceleration/top-coins",
-            params={"time_window": time_window, "limit": 10}
-        )
-        response.raise_for_status()
-        return response.json()
-    except Exception:
-        return []
-
-
-async def fetch_sol_price() -> dict | None:
-    """Fetch current SOL price from CoinGecko."""
+async def fetch_native_price(coin_id: str) -> dict | None:
+    """Fetch native token price from CoinGecko."""
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             response = await client.get(
                 "https://api.coingecko.com/api/v3/simple/price",
                 params={
-                    "ids": "solana",
+                    "ids": coin_id,
                     "vs_currencies": "usd",
                     "include_24hr_change": "true"
                 }
@@ -106,54 +113,54 @@ async def fetch_sol_price() -> dict | None:
             response.raise_for_status()
             data = response.json()
             return {
-                "price": data["solana"]["usd"],
-                "change_24h": data["solana"].get("usd_24h_change", 0)
+                "price": data[coin_id]["usd"],
+                "change_24h": data[coin_id].get("usd_24h_change", 0)
             }
         except Exception as e:
-            print(f"Error fetching SOL price: {e}")
+            print(f"Error fetching {coin_id} price: {e}")
             return None
 
 
-def format_coin_entry(rank: int, coin: dict) -> str:
-    """Format a single coin entry for display."""
-    name = coin.get("name", "Unknown")[:15]
-    symbol = coin.get("symbol", "???")[:8]
-    market_cap = coin.get("market_cap") or coin.get("market_cap_usd") or 0
-    change_pct = coin.get("change_pct") or coin.get("price_change_24h") or 0
-    address = coin.get("token_address") or coin.get("address") or ""
+def get_trade_link(chain: str, address: str) -> str:
+    """Get the appropriate DEX link for a token."""
+    if chain == "solana":
+        return f"https://dexscreener.com/solana/{address}"
+    elif chain == "base":
+        return f"https://dexscreener.com/base/{address}"
+    return f"https://dexscreener.com/{chain}/{address}"
 
-    # Emoji based on rank
+
+def format_coin_entry(rank: int, coin: dict, chain: str) -> str:
+    """Format a single coin entry for display."""
+    symbol = coin.get("symbol", "???")[:10]
+    market_cap = coin.get("market_cap") or 0
+    change_pct = coin.get("change_pct") or 0
+    address = coin.get("token_address", "")
+
     rank_emoji = ["🥇", "🥈", "🥉"][rank - 1] if rank <= 3 else f"{rank}."
 
-    # Change indicator
-    if change_pct > 0:
+    if change_pct and change_pct > 0:
         change_str = f"🟢 +{change_pct:.1f}%"
-    elif change_pct < 0:
+    elif change_pct and change_pct < 0:
         change_str = f"🔴 {change_pct:.1f}%"
     else:
         change_str = "⚪ 0%"
 
-    # Vertigo link
-    if address:
-        vertigo_link = f"<a href='https://vertigo.sh/tokens/{address}'>Trade</a>"
-        return f"{rank_emoji} <b>{symbol}</b> | {format_currency(market_cap)} | {change_str} | {vertigo_link}"
-
-    return f"{rank_emoji} <b>{symbol}</b> | {format_currency(market_cap)} | {change_str}"
+    trade_link = f"<a href='{get_trade_link(chain, address)}'>Chart</a>"
+    return f"{rank_emoji} <b>{symbol}</b> | {format_currency(market_cap)} | {change_str} | {trade_link}"
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start command."""
     welcome_text = """
-🚀 <b>PayAttention.Sol Bot</b>
+🚀 <b>PayAttention Bot</b>
 
-Track trending Solana meme coins in real-time!
+Track trending meme coins on <b>Solana</b> and <b>Base</b>!
 
 <b>Commands:</b>
-/trending - View top 5 coins for each time period
-/top1h - Top 5 coins in the last hour
-/top24h - Top 5 coins in 24 hours
-/top72h - Top 5 coins in 72 hours
-/top168h - Top 5 coins in 7 days
+/trending - Choose chain and view top coins
+/sol - Solana trending coins
+/base - Base trending coins
 
 Stay ahead of the metas! 🔥
 """
@@ -161,133 +168,148 @@ Stay ahead of the metas! 🔥
 
 
 async def trending_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /trending command - show top 5 coins for each time period."""
-    await update.message.reply_text("⏳ Fetching trending coins...")
-
-    message_parts = ["🔥 <b>TRENDING SOLANA COINS</b>\n"]
-
-    for tw in TIME_WINDOWS:
-        coins = await fetch_trending_coins(tw)
-
-        tw_label = {
-            "1h": "⚡ Last Hour",
-            "24h": "📅 24 Hours",
-            "72h": "📊 72 Hours (3 Days)",
-            "168h": "📈 168 Hours (7 Days)"
-        }.get(tw, tw)
-
-        message_parts.append(f"\n<b>{tw_label}</b>")
-        message_parts.append("─" * 25)
-
-        if not coins:
-            message_parts.append("<i>No data available</i>")
-        else:
-            for i, coin in enumerate(coins[:5], 1):
-                message_parts.append(format_coin_entry(i, coin))
-
-    # Add SOL price at the bottom
-    sol_data = await fetch_sol_price()
-    if sol_data:
-        sol_change = sol_data["change_24h"]
-        sol_emoji = "🟢" if sol_change >= 0 else "🔴"
-        sol_sign = "+" if sol_change >= 0 else ""
-        message_parts.append(f"\n\n💎 <b>SOL:</b> ${sol_data['price']:.2f} {sol_emoji} {sol_sign}{sol_change:.1f}%")
-
-    message_parts.append(f"\n🕐 Updated: {datetime.utcnow().strftime('%H:%M UTC')}")
-    message_parts.append("💜 <a href='https://payattentiondotsol.vercel.app'>PayAttention.Sol</a>")
-
-    await update.message.reply_html("\n".join(message_parts), disable_web_page_preview=True)
-
-
-async def top_coins_command(update: Update, context: ContextTypes.DEFAULT_TYPE, time_window: str):
-    """Handle individual time window commands."""
-    await update.message.reply_text(f"⏳ Fetching top coins for {time_window}...")
-
-    coins = await fetch_trending_coins(time_window)
-
-    tw_label = {
-        "1h": "⚡ Last Hour",
-        "24h": "📅 24 Hours",
-        "72h": "📊 72 Hours (3 Days)",
-        "168h": "📈 168 Hours (7 Days)"
-    }.get(time_window, time_window)
-
-    message_parts = [
-        f"🔥 <b>TOP 5 COINS - {tw_label}</b>",
-        "─" * 30,
-        ""
+    """Handle /trending command - show chain selection."""
+    keyboard = [
+        [
+            InlineKeyboardButton("☀️ Solana", callback_data="chain_solana"),
+            InlineKeyboardButton("🔵 Base", callback_data="chain_base"),
+        ]
     ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_text(
+        "🔥 <b>Choose a chain:</b>",
+        reply_markup=reply_markup,
+        parse_mode="HTML"
+    )
+
+
+async def chain_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle chain selection callback."""
+    query = update.callback_query
+    await query.answer()
+
+    chain = query.data.replace("chain_", "")
+
+    # Update message to show loading
+    await query.edit_message_text("⏳ Fetching trending coins...")
+
+    # Chain config
+    chain_config = {
+        "solana": {"emoji": "☀️", "name": "SOLANA", "native": "solana", "native_symbol": "SOL"},
+        "base": {"emoji": "🔵", "name": "BASE", "native": "ethereum", "native_symbol": "ETH"},
+    }
+
+    config = chain_config.get(chain, chain_config["solana"])
+
+    # Fetch trending tokens
+    coins = await fetch_trending_from_dexscreener(chain, limit=10)
+
+    message_parts = [f"{config['emoji']} <b>TRENDING ON {config['name']}</b>\n"]
+    message_parts.append("─" * 28)
 
     if not coins:
-        message_parts.append("<i>No data available for this time period</i>")
+        message_parts.append("\n<i>No trending coins found</i>")
     else:
-        for i, coin in enumerate(coins[:5], 1):
-            name = coin.get("name", "Unknown")
-            symbol = coin.get("symbol", "???")
-            market_cap = coin.get("market_cap") or coin.get("market_cap_usd") or 0
-            prev_cap = coin.get("prev_market_cap") or market_cap
-            change_pct = coin.get("change_pct") or coin.get("price_change_24h") or 0
+        for i, coin in enumerate(coins[:10], 1):
+            message_parts.append(format_coin_entry(i, coin, chain))
 
-            rank_emoji = ["🥇", "🥈", "🥉"][i - 1] if i <= 3 else f"{i}."
+    # Add native token price
+    native_data = await fetch_native_price(config["native"])
+    if native_data:
+        change = native_data["change_24h"]
+        emoji = "🟢" if change >= 0 else "🔴"
+        sign = "+" if change >= 0 else ""
+        message_parts.append(f"\n\n💎 <b>{config['native_symbol']}:</b> ${native_data['price']:.2f} {emoji} {sign}{change:.1f}%")
 
-            if change_pct > 0:
-                change_emoji = "🟢"
-                change_str = f"+{change_pct:.1f}%"
-            elif change_pct < 0:
-                change_emoji = "🔴"
-                change_str = f"{change_pct:.1f}%"
-            else:
-                change_emoji = "⚪"
-                change_str = "0%"
+    message_parts.append(f"\n🕐 {datetime.utcnow().strftime('%H:%M UTC')}")
 
-            message_parts.append(
-                f"{rank_emoji} <b>{symbol}</b>\n"
-                f"   📊 {format_currency(market_cap)}\n"
-                f"   {change_emoji} {change_str}\n"
-            )
+    # Add button to switch chains
+    other_chain = "base" if chain == "solana" else "solana"
+    other_config = chain_config[other_chain]
+    keyboard = [[InlineKeyboardButton(f"Switch to {other_config['emoji']} {other_config['name']}", callback_data=f"chain_{other_chain}")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
 
-    message_parts.append(f"🕐 {datetime.utcnow().strftime('%H:%M UTC')}")
-    message_parts.append("💜 <a href='https://payattentiondotsol.vercel.app'>PayAttention.Sol</a>")
+    await query.edit_message_text(
+        "\n".join(message_parts),
+        parse_mode="HTML",
+        disable_web_page_preview=True,
+        reply_markup=reply_markup
+    )
+
+
+async def sol_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Direct command for Solana trending."""
+    await update.message.reply_text("⏳ Fetching Solana trending coins...")
+
+    coins = await fetch_trending_from_dexscreener("solana", limit=10)
+
+    message_parts = ["☀️ <b>TRENDING ON SOLANA</b>\n", "─" * 28]
+
+    if not coins:
+        message_parts.append("\n<i>No trending coins found</i>")
+    else:
+        for i, coin in enumerate(coins[:10], 1):
+            message_parts.append(format_coin_entry(i, coin, "solana"))
+
+    native_data = await fetch_native_price("solana")
+    if native_data:
+        change = native_data["change_24h"]
+        emoji = "🟢" if change >= 0 else "🔴"
+        sign = "+" if change >= 0 else ""
+        message_parts.append(f"\n\n💎 <b>SOL:</b> ${native_data['price']:.2f} {emoji} {sign}{change:.1f}%")
+
+    message_parts.append(f"\n🕐 {datetime.utcnow().strftime('%H:%M UTC')}")
 
     await update.message.reply_html("\n".join(message_parts), disable_web_page_preview=True)
 
 
-# Command handlers for each time window
-async def top1h(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await top_coins_command(update, context, "1h")
+async def base_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Direct command for Base trending."""
+    await update.message.reply_text("⏳ Fetching Base trending coins...")
 
-async def top24h(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await top_coins_command(update, context, "24h")
+    coins = await fetch_trending_from_dexscreener("base", limit=10)
 
-async def top72h(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await top_coins_command(update, context, "72h")
+    message_parts = ["🔵 <b>TRENDING ON BASE</b>\n", "─" * 28]
 
-async def top168h(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await top_coins_command(update, context, "168h")
+    if not coins:
+        message_parts.append("\n<i>No trending coins found</i>")
+    else:
+        for i, coin in enumerate(coins[:10], 1):
+            message_parts.append(format_coin_entry(i, coin, "base"))
+
+    native_data = await fetch_native_price("ethereum")
+    if native_data:
+        change = native_data["change_24h"]
+        emoji = "🟢" if change >= 0 else "🔴"
+        sign = "+" if change >= 0 else ""
+        message_parts.append(f"\n\n💎 <b>ETH:</b> ${native_data['price']:.2f} {emoji} {sign}{change:.1f}%")
+
+    message_parts.append(f"\n🕐 {datetime.utcnow().strftime('%H:%M UTC')}")
+
+    await update.message.reply_html("\n".join(message_parts), disable_web_page_preview=True)
 
 
 def main():
     """Start the bot."""
     if not BOT_TOKEN:
         print("ERROR: TELEGRAM_BOT_TOKEN not set!")
-        print("Create a .env file with your bot token from @BotFather")
         return
 
-    print("🚀 Starting PayAttention.Sol Telegram Bot...")
-    print(f"📡 API URL: {API_URL}")
+    print("🚀 Starting PayAttention Telegram Bot...")
+    print(f"📡 Backend API: {API_URL}")
+    print("🔗 Using DexScreener for real-time data")
 
-    # Create application
     app = Application.builder().token(BOT_TOKEN).build()
 
     # Register handlers
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("trending", trending_command))
-    app.add_handler(CommandHandler("top1h", top1h))
-    app.add_handler(CommandHandler("top24h", top24h))
-    app.add_handler(CommandHandler("top72h", top72h))
-    app.add_handler(CommandHandler("top168h", top168h))
+    app.add_handler(CommandHandler("sol", sol_command))
+    app.add_handler(CommandHandler("base", base_command))
+    app.add_handler(CallbackQueryHandler(chain_callback, pattern="^chain_"))
 
-    print("✅ Bot is running! Press Ctrl+C to stop.")
+    print("✅ Bot is running!")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
