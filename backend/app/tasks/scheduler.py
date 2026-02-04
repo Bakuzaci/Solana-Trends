@@ -100,6 +100,11 @@ async def snapshot_job():
                         sub_category=sub_cat,
                         detected_keywords=",".join(keywords) if keywords else None,
                         is_graduated=False,  # Will be updated based on liquidity
+                        # Social links from DexScreener
+                        twitter_url=token_data.twitter_url,
+                        telegram_url=token_data.telegram_url,
+                        website_url=token_data.website_url,
+                        description=token_data.description,
                     )
                     session.add(new_token)
                     tokens_created += 1

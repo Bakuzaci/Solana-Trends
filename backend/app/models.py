@@ -48,6 +48,12 @@ class Token(Base):
 
     # Graduation status (migrated from PumpFun bonding curve to Raydium LP)
     is_graduated: Mapped[bool] = mapped_column(Boolean, default=False)
+    
+    # Social links
+    twitter_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    telegram_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    website_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Relationship to snapshots
     snapshots: Mapped[List["Snapshot"]] = relationship(

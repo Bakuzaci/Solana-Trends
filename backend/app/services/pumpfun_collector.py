@@ -25,6 +25,11 @@ class TokenData:
     price_change_24h: Optional[float] = None
     volume_24h: Optional[float] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
+    # Social links
+    twitter_url: Optional[str] = None
+    telegram_url: Optional[str] = None
+    website_url: Optional[str] = None
+    description: Optional[str] = None
     
     @property
     def is_pumpfun(self) -> bool:
@@ -75,15 +80,34 @@ class PumpFunCollector:
             solana_tokens = [t for t in data if t.get("chainId") == "solana"][:limit]
             
             for item in solana_tokens:
+                # Extract social links
+                links = item.get("links", [])
+                twitter_url = None
+                telegram_url = None
+                website_url = None
+                
+                for link in links:
+                    link_type = link.get("type", "").lower()
+                    url = link.get("url", "")
+                    if link_type == "twitter" or "x.com" in url or "twitter.com" in url:
+                        twitter_url = url
+                    elif link_type == "telegram" or "t.me" in url:
+                        telegram_url = url
+                    elif link.get("label", "").lower() == "website" or (not link_type and url):
+                        website_url = url
+                
                 token = TokenData(
                     token_address=item.get("tokenAddress", ""),
                     name="",  # Will be enriched
                     symbol="",  # Will be enriched
                     created_at=datetime.utcnow(),
+                    description=item.get("description", ""),
+                    twitter_url=twitter_url,
+                    telegram_url=telegram_url,
+                    website_url=website_url,
                     metadata={
                         "source": "dexscreener_profiles",
-                        "description": item.get("description", ""),
-                        "links": item.get("links", []),
+                        "links": links,
                     }
                 )
                 tokens.append(token)

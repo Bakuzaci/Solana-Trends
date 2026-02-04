@@ -224,9 +224,13 @@ async def get_trend_coins(
             market_cap_usd=snapshot.market_cap_usd if snapshot else None,
             liquidity_usd=snapshot.liquidity_usd if snapshot else None,
             price_usd=snapshot.price_usd if snapshot else None,
-            # Use price_change_24h directly from Moralis API via snapshot
             price_change_24h=snapshot.price_change_24h if snapshot else None,
             volume_24h=snapshot.volume_24h if snapshot else None,
+            # Social links
+            twitter_url=getattr(token, 'twitter_url', None),
+            telegram_url=getattr(token, 'telegram_url', None),
+            website_url=getattr(token, 'website_url', None),
+            description=getattr(token, 'description', None),
         )
         response.append(coin)
 

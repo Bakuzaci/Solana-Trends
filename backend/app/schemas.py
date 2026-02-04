@@ -48,6 +48,11 @@ class CoinResponse(TokenResponse):
     price_usd: Optional[float] = None
     price_change_24h: Optional[float] = None
     volume_24h: Optional[float] = None
+    # Social links
+    twitter_url: Optional[str] = None
+    telegram_url: Optional[str] = None
+    website_url: Optional[str] = None
+    description: Optional[str] = None
 
     class Config:
         from_attributes = True
