@@ -57,15 +57,13 @@ async def snapshot_job():
 
     async with async_session_maker() as session:
         try:
-            # Fetch PumpFun tokens from GeckoTerminal (free, comprehensive, real data)
-            print("Fetching PumpFun tokens from GeckoTerminal...")
+            # Fetch meme tokens from CoinGecko (pre-categorized, accurate data)
+            print("Fetching Solana meme tokens from CoinGecko...")
             all_tokens = await fetch_pumpfun_tokens(
-                limit=500,  # Get more tokens for better coverage
-                min_volume=50,  # Lower threshold to catch emerging tokens
-                include_bonding_curve=settings.include_bonding_curve,
+                limit=300,  # CoinGecko has ~100-300 categorized tokens
+                min_volume=0,  # CoinGecko already filters
             )
-            print(f"Fetched {len(all_tokens)} PumpFun tokens with market data")
-            print(f"  (include_bonding_curve={settings.include_bonding_curve})")
+            print(f"Fetched {len(all_tokens)} tokens from CoinGecko")
 
             # Process and store tokens
             tokens_created = 0
@@ -81,10 +79,11 @@ async def snapshot_job():
                 if existing_token:
                     tokens_updated += 1
                 else:
-                    # Categorize new token
+                    # Categorize new token (use CoinGecko category if available)
                     primary_cat, sub_cat, keywords = categorize_token(
                         token_data.name,
-                        token_data.symbol
+                        token_data.symbol,
+                        coingecko_category=getattr(token_data, 'coingecko_category', None),
                     )
 
                     # Create new token record
