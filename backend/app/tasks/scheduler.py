@@ -17,11 +17,14 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from ..config import settings
 from ..database import async_session_maker
 from ..models import Token, Snapshot, TrendAggregate, MetaRelationship
-from ..services.data_collector import (
-    fetch_new_tokens,
-    fetch_token_prices,
-    fetch_graduated_tokens,
+from ..services.pumpfun_collector import (
+    fetch_pumpfun_tokens,
+    PumpFunCollector,
     TokenData,
+)
+# Legacy imports kept for compatibility
+from ..services.data_collector import (
+    fetch_token_prices,
 )
 from ..services.web_token_discovery import refresh_token_cache
 from ..services.social_listening import discover_meta_relationships
@@ -55,24 +58,13 @@ async def snapshot_job():
 
     async with async_session_maker() as session:
         try:
-            # Fetch new tokens from PumpFun
-            print("Fetching new tokens...")
-            new_tokens = await fetch_new_tokens(limit=100)
-            print(f"Fetched {len(new_tokens)} new tokens")
-
-            # Also fetch graduated tokens (these have real liquidity and DEX pairs)
-            print("Fetching graduated tokens...")
-            graduated_tokens = await fetch_graduated_tokens(limit=50)
-            print(f"Fetched {len(graduated_tokens)} graduated tokens")
-
-            # Combine tokens, avoiding duplicates
-            seen_addresses = set()
-            all_tokens = []
-            for t in new_tokens + graduated_tokens:
-                if t.token_address not in seen_addresses:
-                    seen_addresses.add(t.token_address)
-                    all_tokens.append(t)
-            print(f"Processing {len(all_tokens)} unique tokens")
+            # Fetch PumpFun tokens from DexScreener (free, reliable, real data)
+            print("Fetching PumpFun tokens from DexScreener...")
+            all_tokens = await fetch_pumpfun_tokens(
+                limit=150,
+                min_volume=100,  # Filter out completely dead tokens
+            )
+            print(f"Fetched {len(all_tokens)} PumpFun tokens with market data")
 
             # Process and store tokens
             tokens_created = 0
@@ -113,35 +105,22 @@ async def snapshot_job():
             await session.commit()
             print(f"Tokens - Created: {tokens_created}, Updated: {tokens_updated}")
 
-            # Create initial snapshots using data from the token endpoints
-            # This preserves liquidity/market cap from PumpFun endpoints
+            # Create snapshots using enriched data from DexScreener
+            # No need for additional API calls - data already includes:
+            # market_cap, liquidity, price, price_change_24h, volume_24h
             now = datetime.utcnow()
             snapshots_created = 0
-
-            # Build a map of token data from the fetched tokens
-            token_data_map = {t.token_address: t for t in all_tokens}
-
-            # Fetch additional price data (pairs endpoint for price changes)
-            new_token_addresses = [t.token_address for t in all_tokens]
-            prices = {}
-            if new_token_addresses:
-                print(f"Fetching additional price data for {len(new_token_addresses)} tokens...")
-                prices = await fetch_token_prices(new_token_addresses)
-
             graduated_updated = 0
+
             for token_data in all_tokens:
                 address = token_data.token_address
-                price_update = prices.get(address, {})
-
-                # Prefer data from token endpoint, fall back to price endpoint
-                # Token endpoints have better data for new/graduated tokens
-                market_cap = token_data.market_cap_usd or price_update.get("market_cap_usd") or 0
-                liquidity = token_data.liquidity_usd or price_update.get("liquidity_usd") or 0
-                price = token_data.price_usd or price_update.get("price_usd") or 0
-
-                # Price change and volume only come from pairs endpoint
-                price_change_24h = price_update.get("price_change_24h")
-                volume_24h = price_update.get("volume_24h")
+                
+                # All data comes from the enriched token data
+                market_cap = token_data.market_cap_usd or 0
+                liquidity = token_data.liquidity_usd or 0
+                price = token_data.price_usd or 0
+                price_change_24h = token_data.price_change_24h
+                volume_24h = token_data.volume_24h
 
                 snapshot = Snapshot(
                     token_address=address,

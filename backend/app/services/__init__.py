@@ -22,6 +22,14 @@ from .data_collector import (
     fetch_token_prices,
 )
 
+from .pumpfun_collector import (
+    TokenData as PumpFunTokenData,
+    PumpFunCollector,
+    fetch_pumpfun_tokens,
+    fetch_all_solana_tokens,
+    search_category_tokens,
+)
+
 from .breakout_detector import (
     BreakoutCluster,
     TokenInfo,
@@ -42,12 +50,18 @@ __all__ = [
     "calculate_acceleration_score",
     "is_breakout_meta",
     "get_acceleration_tier",
-    # Data Collector
+    # Data Collector (legacy)
     "TokenData",
     "MoralisClient",
     "default_client",
     "fetch_new_tokens",
     "fetch_token_prices",
+    # PumpFun Collector (preferred)
+    "PumpFunTokenData",
+    "PumpFunCollector",
+    "fetch_pumpfun_tokens",
+    "fetch_all_solana_tokens",
+    "search_category_tokens",
     # Breakout Detector
     "BreakoutCluster",
     "TokenInfo",
