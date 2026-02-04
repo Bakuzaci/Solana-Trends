@@ -169,3 +169,36 @@ export const fetchTrendingMetas = async () => {
     return [];
   }
 };
+
+// Fetch emerging clusters (uncategorized tokens that cluster together)
+export const fetchEmergingClusters = async (hours = 24) => {
+  try {
+    const response = await fetch(`${API_URL}/api/emerging/clusters?hours=${hours}`);
+    return handleResponse(response);
+  } catch (error) {
+    console.warn('Emerging clusters API unavailable:', error.message);
+    return [];
+  }
+};
+
+// Fetch trending token names/words
+export const fetchTrendingNames = async (hours = 6) => {
+  try {
+    const response = await fetch(`${API_URL}/api/emerging/trending-names?hours=${hours}`);
+    return handleResponse(response);
+  } catch (error) {
+    console.warn('Trending names API unavailable:', error.message);
+    return [];
+  }
+};
+
+// Fetch uncategorized tokens
+export const fetchUncategorizedTokens = async (hours = 24, minVolume = 0) => {
+  try {
+    const response = await fetch(`${API_URL}/api/emerging/uncategorized?hours=${hours}&min_volume=${minVolume}`);
+    return handleResponse(response);
+  } catch (error) {
+    console.warn('Uncategorized tokens API unavailable:', error.message);
+    return [];
+  }
+};

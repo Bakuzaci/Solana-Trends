@@ -8,3 +8,5 @@ export { default as TimeWindowToggle } from './TimeWindowToggle';
 export { default as TrendCard } from './TrendCard';
 export { default as TrendChart } from './TrendChart';
 export { default as TrendDetail } from './TrendDetail';
+export { default as MarqueeBar } from './MarqueeBar';
+export { default as EmergingSection } from './EmergingSection';

@@ -1,111 +1,107 @@
-import { ArrowUpRight, ArrowDownRight, Minus, TrendingUp } from 'lucide-react';
-import AccelerationBar from './AccelerationBar';
-
-const formatMarketCap = (value) => {
-  if (!value && value !== 0) return '-';
-  if (value >= 1e9) return `$${(value / 1e9).toFixed(2)}B`;
-  if (value >= 1e6) return `$${(value / 1e6).toFixed(2)}M`;
-  if (value >= 1e3) return `$${(value / 1e3).toFixed(2)}K`;
-  return `$${value.toFixed(2)}`;
-};
-
-const getTrendIcon = (direction) => {
-  switch (direction) {
-    case 'up':
-      return <ArrowUpRight className="w-4 h-4 text-green-400" />;
-    case 'down':
-      return <ArrowDownRight className="w-4 h-4 text-red-400" />;
-    default:
-      return <Minus className="w-4 h-4 text-gray-400" />;
-  }
-};
-
-const getTrendColor = (direction) => {
-  switch (direction) {
-    case 'up':
-      return 'border-green-500/30 hover:border-green-500/50';
-    case 'down':
-      return 'border-red-500/30 hover:border-red-500/50';
-    default:
-      return 'border-gray-700 hover:border-purple-500/50';
-  }
-};
-
-export default function TrendCard({ trend, onClick }) {
+/**
+ * TrendCard - Editorial style category card
+ */
+export default function TrendCard({ trend, onClick, rank }) {
   const {
     emoji,
-    name,
     category,
     sub_category,
     coin_count,
     total_market_cap,
-    top_coin,
     acceleration_score,
-    trend_direction,
-    velocity
+    is_breakout_meta,
+    change_24h,
   } = trend;
 
-  const displayName = name || sub_category || category;
+  const displayName = sub_category || category;
   const displayEmoji = emoji || '📊';
+  
+  const formatMcap = (value) => {
+    if (!value) return '—';
+    if (value >= 1e6) return `$${(value / 1e6).toFixed(1)}M`;
+    if (value >= 1e3) return `$${(value / 1e3).toFixed(0)}K`;
+    return `$${value.toFixed(0)}`;
+  };
 
   return (
     <div
       onClick={onClick}
-      className={`glass-card rounded-2xl p-5 cursor-pointer ${getTrendColor(trend_direction)}`}
+      className={`card cursor-pointer group ${is_breakout_meta ? 'card-featured' : ''}`}
     >
-      {/* Header */}
-      <div className="flex items-start justify-between mb-3">
-        <div className="flex items-center gap-3 min-w-0">
-          <span className="text-2xl flex-shrink-0">{displayEmoji}</span>
-          <div className="min-w-0">
-            <h3 className="font-semibold text-white truncate">{displayName}</h3>
-            {category && sub_category && (
-              <p className="text-xs text-gray-500 truncate">{category}</p>
+      <div className="p-4">
+        {/* Rank & Category */}
+        <div className="flex items-start justify-between mb-4">
+          <div className="flex items-center gap-3">
+            {rank && (
+              <span className="font-mono text-2xl font-semibold text-[var(--text-muted)]">
+                {String(rank).padStart(2, '0')}
+              </span>
             )}
+            <span className="text-3xl">{displayEmoji}</span>
           </div>
-        </div>
-        <div className="flex items-center gap-1 flex-shrink-0">
-          {getTrendIcon(trend_direction)}
-          {velocity !== undefined && (
-            <span className={`text-xs ${velocity > 0 ? 'text-green-400' : velocity < 0 ? 'text-red-400' : 'text-gray-400'}`}>
-              {velocity > 0 ? '+' : ''}{velocity?.toFixed(1)}
-            </span>
+          
+          {is_breakout_meta && (
+            <span className="meta-chip hot">Breakout</span>
           )}
         </div>
-      </div>
-
-      {/* Acceleration Bar */}
-      <div className="mb-3">
-        <AccelerationBar score={acceleration_score} />
-      </div>
-
-      {/* Stats Grid */}
-      <div className="grid grid-cols-2 gap-3 text-sm">
-        <div>
-          <p className="text-gray-500 text-xs">Coins</p>
-          <p className="text-white font-medium">{coin_count || 0}</p>
+        
+        {/* Name */}
+        <div className="mb-4">
+          <h3 className="headline-md text-white group-hover:text-[var(--accent-highlight)] transition-colors">
+            {displayName}
+          </h3>
+          {sub_category && (
+            <p className="text-xs text-[var(--text-muted)] mt-1">{category}</p>
+          )}
         </div>
-        <div>
-          <p className="text-gray-500 text-xs">Market Cap</p>
-          <p className="text-white font-medium">{formatMarketCap(total_market_cap)}</p>
-        </div>
-      </div>
-
-      {/* Top Coin */}
-      {top_coin && (
-        <div className="mt-3 pt-3 border-t border-gray-800">
-          <div className="flex items-center justify-between text-sm">
-            <div className="flex items-center gap-1 text-gray-400">
-              <TrendingUp className="w-3 h-3" />
-              <span className="text-xs">Top:</span>
-              <span className="text-purple-400 font-medium">${top_coin.symbol}</span>
+        
+        {/* Stats */}
+        <div className="grid grid-cols-3 gap-4 pt-4 border-t border-[var(--border-subtle)]">
+          <div>
+            <div className="label-sm mb-1">Tokens</div>
+            <div className="font-mono text-lg font-medium">{coin_count || 0}</div>
+          </div>
+          
+          <div>
+            <div className="label-sm mb-1">MCap</div>
+            <div className="font-mono text-lg font-medium">{formatMcap(total_market_cap)}</div>
+          </div>
+          
+          <div>
+            <div className="label-sm mb-1">Accel</div>
+            <div className={`font-mono text-lg font-medium ${
+              acceleration_score >= 70 ? 'text-[var(--accent-hot)]' : 
+              acceleration_score >= 40 ? 'text-[var(--accent-up)]' : 
+              'text-[var(--text-secondary)]'
+            }`}>
+              {acceleration_score?.toFixed(0) || '—'}
             </div>
-            <span className="text-gray-400 text-xs">
-              {formatMarketCap(top_coin.market_cap)}
-            </span>
           </div>
         </div>
-      )}
+        
+        {/* 24h Change */}
+        {change_24h !== null && change_24h !== undefined && (
+          <div className="mt-4 pt-4 border-t border-[var(--border-subtle)] flex items-center justify-between">
+            <span className="label-sm">24h Change</span>
+            <span className={`font-mono text-sm font-medium ${
+              change_24h >= 0 ? 'text-[var(--accent-up)]' : 'text-[var(--accent-down)]'
+            }`}>
+              {change_24h >= 0 ? '+' : ''}{change_24h.toFixed(1)}%
+            </span>
+          </div>
+        )}
+      </div>
+      
+      {/* Bottom accent bar for acceleration */}
+      <div 
+        className="h-1 transition-all"
+        style={{
+          background: `linear-gradient(90deg, 
+            ${acceleration_score >= 70 ? 'var(--accent-hot)' : 'var(--accent-up)'} ${Math.min(acceleration_score || 0, 100)}%, 
+            var(--bg-tertiary) ${Math.min(acceleration_score || 0, 100)}%
+          )`
+        }}
+      />
     </div>
   );
 }

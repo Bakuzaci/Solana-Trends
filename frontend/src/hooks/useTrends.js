@@ -9,6 +9,9 @@ import {
   searchCoins,
   fetchMetaRelationships,
   fetchTrendingMetas,
+  fetchEmergingClusters,
+  fetchTrendingNames,
+  fetchUncategorizedTokens,
 } from '../api/client';
 
 // Hook to fetch all trends
@@ -116,6 +119,36 @@ export const useTrendingMetas = () => {
   return useQuery({
     queryKey: ['trendingMetas'],
     queryFn: fetchTrendingMetas,
+    staleTime: 60000,
+    refetchInterval: 120000,
+  });
+};
+
+// Hook to fetch emerging clusters (new metas)
+export const useEmergingClusters = (hours = 24) => {
+  return useQuery({
+    queryKey: ['emergingClusters', hours],
+    queryFn: () => fetchEmergingClusters(hours),
+    staleTime: 60000,
+    refetchInterval: 120000,
+  });
+};
+
+// Hook to fetch trending token names/words
+export const useTrendingNames = (hours = 6) => {
+  return useQuery({
+    queryKey: ['trendingNames', hours],
+    queryFn: () => fetchTrendingNames(hours),
+    staleTime: 60000,
+    refetchInterval: 120000,
+  });
+};
+
+// Hook to fetch uncategorized tokens
+export const useUncategorizedTokens = (hours = 24, minVolume = 0) => {
+  return useQuery({
+    queryKey: ['uncategorizedTokens', hours, minVolume],
+    queryFn: () => fetchUncategorizedTokens(hours, minVolume),
     staleTime: 60000,
     refetchInterval: 120000,
   });

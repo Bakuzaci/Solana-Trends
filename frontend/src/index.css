@@ -1,15 +1,33 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
-  line-height: 1.5;
+  /* Editorial design system */
+  --font-display: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
+  
+  /* Color palette - editorial brutalist */
+  --bg-primary: #0a0a0a;
+  --bg-secondary: #111111;
+  --bg-tertiary: #1a1a1a;
+  --text-primary: #fafafa;
+  --text-secondary: #888888;
+  --text-muted: #555555;
+  --accent-hot: #ff3b30;
+  --accent-up: #00ff88;
+  --accent-down: #ff4444;
+  --accent-highlight: #ffff00;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.15);
+  
+  font-family: var(--font-display);
+  line-height: 1.4;
   font-weight: 400;
   font-synthesis: none;
-  text-rendering: optimizeLegibility;
+  text-rendering: geometricPrecision;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -18,72 +36,274 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background-color: #000000;
-  color: #f5f5f7;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
 }
 
-/* Apple-inspired glass morphism */
-.glass {
-  background: rgba(28, 28, 30, 0.8);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+/* Typography system */
+.font-display { font-family: var(--font-display); }
+.font-mono { font-family: var(--font-mono); }
+
+/* Headline hierarchy - editorial style */
+.headline-xl {
+  font-size: clamp(2.5rem, 6vw, 4.5rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 0.95;
 }
 
-.glass-card {
-  background: rgba(28, 28, 30, 0.6);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  transition: all 0.3s cubic-bezier(0.25, 0.1, 0.25, 1);
+.headline-lg {
+  font-size: clamp(1.5rem, 4vw, 2.5rem);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
 }
 
-.glass-card:hover {
-  background: rgba(38, 38, 40, 0.7);
-  border-color: rgba(255, 255, 255, 0.1);
-  transform: translateY(-2px);
+.headline-md {
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
 }
 
-/* Smooth transitions */
-* {
-  transition-timing-function: cubic-bezier(0.25, 0.1, 0.25, 1);
-}
-
-/* Elegant buttons */
-.btn-primary {
-  background: linear-gradient(180deg, rgba(147, 112, 219, 0.9) 0%, rgba(120, 80, 200, 0.9) 100%);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
-  padding: 10px 20px;
+.label-sm {
+  font-size: 0.625rem;
   font-weight: 500;
-  transition: all 0.2s ease;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
 }
 
-.btn-primary:hover {
-  background: linear-gradient(180deg, rgba(157, 122, 229, 0.95) 0%, rgba(130, 90, 210, 0.95) 100%);
-  transform: scale(1.02);
+.mono-data {
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  font-weight: 500;
+  letter-spacing: -0.02em;
 }
 
-/* Subtle glow effects */
-.glow-purple {
-  box-shadow: 0 0 20px rgba(147, 112, 219, 0.15);
+/* Card system - brutalist editorial */
+.card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  transition: all 0.15s ease;
 }
 
-/* Custom scrollbar */
+.card:hover {
+  background: var(--bg-tertiary);
+  border-color: var(--border-strong);
+}
+
+.card-featured {
+  background: var(--bg-secondary);
+  border: 2px solid var(--accent-highlight);
+  position: relative;
+}
+
+.card-featured::before {
+  content: 'HOT';
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  background: var(--accent-highlight);
+  color: #000;
+  font-size: 0.5rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 2px 6px;
+}
+
+/* Data grid */
+.data-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.data-row:last-child {
+  border-bottom: none;
+}
+
+/* Ticker tape animation */
+@keyframes ticker {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.ticker-tape {
+  display: flex;
+  animation: ticker 30s linear infinite;
+}
+
+.ticker-tape:hover {
+  animation-play-state: paused;
+}
+
+/* Accent colors */
+.text-hot { color: var(--accent-hot); }
+.text-up { color: var(--accent-up); }
+.text-down { color: var(--accent-down); }
+.text-highlight { color: var(--accent-highlight); }
+.bg-hot { background-color: var(--accent-hot); }
+.bg-up { background-color: var(--accent-up); }
+.bg-highlight { background-color: var(--accent-highlight); }
+
+/* Status indicators */
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  animation: pulse 2s infinite;
+}
+
+.status-dot.live {
+  background: var(--accent-up);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Table styling - Bloomberg-inspired */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+}
+
+.data-table th {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.625rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.data-table td {
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--border-subtle);
+  white-space: nowrap;
+}
+
+.data-table tr:hover td {
+  background: var(--bg-tertiary);
+}
+
+/* Scrollbar - minimal */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 4px;
+  height: 4px;
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.2);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 0;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25);
+/* Button system */
+.btn {
+  font-family: var(--font-display);
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.15s ease;
 }
+
+.btn:hover {
+  background: var(--text-primary);
+  color: var(--bg-primary);
+}
+
+.btn-active {
+  background: var(--text-primary);
+  color: var(--bg-primary);
+}
+
+/* Dividers */
+.divider {
+  height: 1px;
+  background: var(--border-subtle);
+}
+
+.divider-strong {
+  height: 1px;
+  background: var(--border-strong);
+}
+
+/* Grid system */
+.grid-editorial {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 1rem;
+}
+
+/* Selection */
+::selection {
+  background: var(--accent-highlight);
+  color: #000;
+}
+
+/* Number formatting */
+.num-positive::before { content: '+'; }
+
+/* Marquee for breaking trends */
+.marquee-container {
+  overflow: hidden;
+  background: var(--accent-highlight);
+  color: #000;
+  padding: 0.25rem 0;
+}
+
+.marquee-content {
+  display: inline-flex;
+  animation: marquee 20s linear infinite;
+  font-weight: 600;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+/* Meta chip */
+.meta-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  font-size: 0.625rem;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.meta-chip.hot {
+  background: var(--accent-hot);
+  color: white;
+  border-color: var(--accent-hot);
+}
+
+/* Chart colors */
+.chart-line-primary { stroke: var(--accent-up); }
+.chart-line-secondary { stroke: var(--text-muted); }
+.chart-area { fill: url(#gradient-up); }
