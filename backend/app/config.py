@@ -14,8 +14,11 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
-    # Moralis API Key for fetching Solana token data
+    # Moralis API Key for fetching Solana token data (legacy, optional)
     moralis_api_key: Optional[str] = None
+    
+    # Helius API Key for bonding curve tokens (optional, free tier available)
+    helius_api_key: Optional[str] = None
 
     # Database URL (SQLite by default)
     database_url: str = "sqlite+aiosqlite:///./solana_trends.db"
@@ -29,11 +32,19 @@ class Settings(BaseSettings):
     # Application settings
     app_name: str = "PayAttention.Sol"
     debug: bool = False
+    
+    # Token filtering
+    include_bonding_curve: bool = True  # Include tokens still on bonding curve
 
     @property
     def has_moralis_key(self) -> bool:
         """Check if a valid Moralis API key is configured."""
         return self.moralis_api_key is not None and len(self.moralis_api_key) > 0
+    
+    @property
+    def has_helius_key(self) -> bool:
+        """Check if a valid Helius API key is configured."""
+        return self.helius_api_key is not None and len(self.helius_api_key) > 0
 
 
 # Global settings instance

@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .database import init_db, close_db
-from .api import trends, acceleration, history, search, trending
+from .api import trends, acceleration, history, search, trending, emerging
 from .tasks.scheduler import start_scheduler, stop_scheduler, snapshot_job, aggregate_job
 
 
@@ -178,3 +178,4 @@ app.include_router(acceleration.router, prefix="/api/acceleration", tags=["accel
 app.include_router(history.router, prefix="/api/history", tags=["history"])
 app.include_router(search.router, prefix="/api/search", tags=["search"])
 app.include_router(trending.router, prefix="/api/trending", tags=["trending"])
+app.include_router(emerging.router, prefix="/api/emerging", tags=["emerging"])

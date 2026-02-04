@@ -335,19 +335,33 @@ async def fetch_pumpfun_tokens(
     limit: int = 100,
     min_volume: float = 0,
     min_mcap: float = 0,
+    include_bonding_curve: bool = True,
 ) -> List[TokenData]:
     """
     Fetch PumpFun tokens with market data.
     
     This is the main entry point for the data collector.
+    
+    Args:
+        limit: Maximum tokens to return
+        min_volume: Minimum 24h volume filter
+        min_mcap: Minimum market cap filter  
+        include_bonding_curve: If True, includes tokens still on bonding curve
+                              (no liquidity yet). These are the freshest tokens.
     """
     async with PumpFunCollector() as collector:
-        return await collector.fetch_all(
+        tokens = await collector.fetch_all(
             limit=limit,
             pumpfun_only=True,
             min_volume=min_volume,
             min_mcap=min_mcap,
         )
+        
+        if not include_bonding_curve:
+            # Filter out tokens without liquidity (still on bonding curve)
+            tokens = [t for t in tokens if t.liquidity_usd and t.liquidity_usd > 0]
+        
+        return tokens
 
 
 async def fetch_all_solana_tokens(

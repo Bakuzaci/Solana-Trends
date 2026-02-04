@@ -1,4 +1,4 @@
 # API routes module
-from . import trends, acceleration, history
+from . import trends, acceleration, history, search, trending, emerging
 
-__all__ = ["trends", "acceleration", "history"]
+__all__ = ["trends", "acceleration", "history", "search", "trending", "emerging"]
