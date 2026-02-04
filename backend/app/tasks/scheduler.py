@@ -63,8 +63,10 @@ async def snapshot_job():
             all_tokens = await fetch_pumpfun_tokens(
                 limit=150,
                 min_volume=100,  # Filter out completely dead tokens
+                include_bonding_curve=settings.include_bonding_curve,
             )
             print(f"Fetched {len(all_tokens)} PumpFun tokens with market data")
+            print(f"  (include_bonding_curve={settings.include_bonding_curve})")
 
             # Process and store tokens
             tokens_created = 0
