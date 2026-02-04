@@ -19,7 +19,6 @@ from ..database import async_session_maker
 from ..models import Token, Snapshot, TrendAggregate, MetaRelationship
 from ..services.pumpfun_collector import (
     fetch_pumpfun_tokens,
-    PumpFunCollector,
     TokenData,
 )
 # Legacy imports kept for compatibility
@@ -58,11 +57,11 @@ async def snapshot_job():
 
     async with async_session_maker() as session:
         try:
-            # Fetch PumpFun tokens from DexScreener (free, reliable, real data)
-            print("Fetching PumpFun tokens from DexScreener...")
+            # Fetch PumpFun tokens from GeckoTerminal (free, comprehensive, real data)
+            print("Fetching PumpFun tokens from GeckoTerminal...")
             all_tokens = await fetch_pumpfun_tokens(
-                limit=150,
-                min_volume=100,  # Filter out completely dead tokens
+                limit=500,  # Get more tokens for better coverage
+                min_volume=50,  # Lower threshold to catch emerging tokens
                 include_bonding_curve=settings.include_bonding_curve,
             )
             print(f"Fetched {len(all_tokens)} PumpFun tokens with market data")

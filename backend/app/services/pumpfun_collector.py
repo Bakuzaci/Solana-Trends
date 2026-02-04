@@ -1,434 +1,261 @@
 """
-PumpFun token collector using DexScreener API.
+PumpFun Token Collector using GeckoTerminal API.
 
-Fetches Solana tokens from DexScreener (free, no auth required),
-filters for PumpFun tokens, and enriches with market data.
+Fetches comprehensive Solana memecoin data including:
+- Trending pools (highest activity)
+- New pools (freshest tokens)
+- Token details with market data
+
+GeckoTerminal is free, no auth required, and provides accurate real-time data.
 """
 import asyncio
-from datetime import datetime
-from typing import List, Dict, Any, Optional, Set
-from dataclasses import dataclass, field
-
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import List, Optional, Dict, Any
 import httpx
+
+GECKO_BASE_URL = "https://api.geckoterminal.com/api/v2"
+
+# Rate limit: be respectful
+RATE_LIMIT_DELAY = 0.5  # seconds between requests
 
 
 @dataclass
 class TokenData:
-    """Represents token data from the API."""
+    """Standardized token data structure."""
     token_address: str
     name: str
     symbol: str
-    created_at: datetime
-    market_cap_usd: Optional[float] = None
-    liquidity_usd: Optional[float] = None
-    price_usd: Optional[float] = None
-    price_change_24h: Optional[float] = None
-    volume_24h: Optional[float] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    market_cap_usd: float
+    liquidity_usd: float
+    volume_24h: float
+    price_usd: float
+    price_change_24h: float
+    created_at: Optional[datetime] = None
+    is_pumpfun: bool = False
     # Social links
     twitter_url: Optional[str] = None
     telegram_url: Optional[str] = None
     website_url: Optional[str] = None
     description: Optional[str] = None
-    
-    @property
-    def is_pumpfun(self) -> bool:
-        """Check if token is from PumpFun (address ends in 'pump')."""
-        return self.token_address.lower().endswith('pump')
 
 
-class PumpFunCollector:
-    """
-    Collects PumpFun token data from DexScreener.
-    
-    DexScreener is free and provides real market data.
-    PumpFun tokens are identified by addresses ending in 'pump'.
-    """
-    
-    BASE_URL = "https://api.dexscreener.com"
-    
-    def __init__(self):
-        self.client: Optional[httpx.AsyncClient] = None
-    
-    async def __aenter__(self):
-        self.client = httpx.AsyncClient(timeout=30.0)
-        return self
-    
-    async def __aexit__(self, *args):
-        if self.client:
-            await self.client.aclose()
-    
-    async def _ensure_client(self):
-        if not self.client:
-            self.client = httpx.AsyncClient(timeout=30.0)
-    
-    async def fetch_latest_tokens(self, limit: int = 100) -> List[TokenData]:
-        """
-        Fetch latest Solana token profiles from DexScreener.
+async def _fetch_json(client: httpx.AsyncClient, url: str) -> Optional[Dict[str, Any]]:
+    """Fetch JSON from URL with error handling."""
+    try:
+        resp = await client.get(url, timeout=15.0)
+        if resp.status_code == 200:
+            return resp.json()
+        print(f"  [GeckoTerminal] {url} returned {resp.status_code}")
+        return None
+    except Exception as e:
+        print(f"  [GeckoTerminal] Error fetching {url}: {e}")
+        return None
+
+
+def _parse_pool(pool_data: Dict[str, Any]) -> Optional[TokenData]:
+    """Parse a pool from GeckoTerminal API response."""
+    try:
+        attr = pool_data.get("attributes", {})
+        relationships = pool_data.get("relationships", {})
         
-        Returns tokens that have recently created profiles (active projects).
-        """
-        await self._ensure_client()
-        tokens = []
+        # Get base token address from relationships
+        base_token_data = relationships.get("base_token", {}).get("data", {})
+        token_id = base_token_data.get("id", "")
+        # Token ID format: "solana_<address>"
+        token_address = token_id.replace("solana_", "") if token_id.startswith("solana_") else ""
         
-        try:
-            response = await self.client.get(f"{self.BASE_URL}/token-profiles/latest/v1")
-            response.raise_for_status()
-            data = response.json()
-            
-            # Filter for Solana tokens
-            solana_tokens = [t for t in data if t.get("chainId") == "solana"][:limit]
-            
-            for item in solana_tokens:
-                # Extract social links
-                links = item.get("links", [])
-                twitter_url = None
-                telegram_url = None
-                website_url = None
-                
-                for link in links:
-                    link_type = link.get("type", "").lower()
-                    url = link.get("url", "")
-                    if link_type == "twitter" or "x.com" in url or "twitter.com" in url:
-                        twitter_url = url
-                    elif link_type == "telegram" or "t.me" in url:
-                        telegram_url = url
-                    elif link.get("label", "").lower() == "website" or (not link_type and url):
-                        website_url = url
-                
-                token = TokenData(
-                    token_address=item.get("tokenAddress", ""),
-                    name="",  # Will be enriched
-                    symbol="",  # Will be enriched
-                    created_at=datetime.utcnow(),
-                    description=item.get("description", ""),
-                    twitter_url=twitter_url,
-                    telegram_url=telegram_url,
-                    website_url=website_url,
-                    metadata={
-                        "source": "dexscreener_profiles",
-                        "links": links,
-                    }
-                )
-                tokens.append(token)
-            
-            print(f"[PumpFunCollector] Fetched {len(tokens)} latest profiles")
-            
-        except Exception as e:
-            print(f"[PumpFunCollector] Error fetching latest: {e}")
+        if not token_address:
+            return None
         
-        return tokens
-    
-    async def fetch_boosted_tokens(self, limit: int = 50) -> List[TokenData]:
-        """
-        Fetch boosted/trending Solana tokens from DexScreener.
+        name = attr.get("name", "Unknown").split(" / ")[0]  # "TOKEN / SOL" -> "TOKEN"
         
-        These are tokens with paid promotion (indicates active community).
-        """
-        await self._ensure_client()
-        tokens = []
+        # Get price and volume data
+        fdv = attr.get("fdv_usd")
+        market_cap = float(fdv) if fdv else 0.0
         
-        try:
-            response = await self.client.get(f"{self.BASE_URL}/token-boosts/top/v1")
-            response.raise_for_status()
-            data = response.json()
-            
-            # Filter for Solana tokens
-            solana_tokens = [t for t in data if t.get("chainId") == "solana"][:limit]
-            
-            for item in solana_tokens:
-                token = TokenData(
-                    token_address=item.get("tokenAddress", ""),
-                    name="",
-                    symbol="",
-                    created_at=datetime.utcnow(),
-                    metadata={
-                        "source": "dexscreener_boosts",
-                        "description": item.get("description", ""),
-                        "boost_amount": item.get("totalAmount", 0),
-                    }
-                )
-                tokens.append(token)
-            
-            print(f"[PumpFunCollector] Fetched {len(tokens)} boosted tokens")
-            
-        except Exception as e:
-            print(f"[PumpFunCollector] Error fetching boosted: {e}")
+        reserve = attr.get("reserve_in_usd")
+        liquidity = float(reserve) if reserve else 0.0
         
-        return tokens
-    
-    async def search_tokens(self, query: str, limit: int = 50) -> List[TokenData]:
-        """
-        Search for Solana tokens by keyword.
+        vol_data = attr.get("volume_usd", {})
+        volume_24h = float(vol_data.get("h24", 0) or 0)
         
-        Useful for finding tokens in specific categories.
-        """
-        await self._ensure_client()
-        tokens = []
-        seen_addresses: Set[str] = set()
+        price_str = attr.get("base_token_price_usd")
+        price_usd = float(price_str) if price_str else 0.0
         
-        try:
-            response = await self.client.get(
-                f"{self.BASE_URL}/latest/dex/search",
-                params={"q": query}
-            )
-            response.raise_for_status()
-            data = response.json()
-            
-            pairs = data.get("pairs", [])
-            solana_pairs = [p for p in pairs if p.get("chainId") == "solana"]
-            
-            for pair in solana_pairs[:limit]:
-                base_token = pair.get("baseToken", {})
-                address = base_token.get("address", "")
-                
-                if address in seen_addresses:
-                    continue
-                seen_addresses.add(address)
-                
-                token = TokenData(
-                    token_address=address,
-                    name=base_token.get("name", "Unknown"),
-                    symbol=base_token.get("symbol", "???"),
-                    created_at=datetime.utcnow(),
-                    market_cap_usd=pair.get("marketCap"),
-                    liquidity_usd=pair.get("liquidity", {}).get("usd"),
-                    price_usd=float(pair.get("priceUsd", 0) or 0),
-                    price_change_24h=pair.get("priceChange", {}).get("h24"),
-                    volume_24h=pair.get("volume", {}).get("h24"),
-                    metadata={
-                        "source": "dexscreener_search",
-                        "query": query,
-                        "pair_address": pair.get("pairAddress"),
-                        "dex": pair.get("dexId"),
-                    }
-                )
-                tokens.append(token)
-            
-            print(f"[PumpFunCollector] Search '{query}' found {len(tokens)} tokens")
-            
-        except Exception as e:
-            print(f"[PumpFunCollector] Error searching '{query}': {e}")
+        # Price changes
+        price_changes = attr.get("price_change_percentage", {})
+        price_change_24h = float(price_changes.get("h24", 0) or 0)
         
-        return tokens
-    
-    async def enrich_with_market_data(self, tokens: List[TokenData]) -> List[TokenData]:
-        """
-        Enrich tokens with market data from DexScreener pairs endpoint.
-        
-        Fetches price, market cap, volume, and 24h change for each token.
-        """
-        if not tokens:
-            return tokens
-        
-        await self._ensure_client()
-        
-        # Batch addresses (DexScreener allows up to 30 per request)
-        addresses = [t.token_address for t in tokens if t.token_address]
-        batch_size = 30
-        enriched_data: Dict[str, Dict] = {}
-        
-        for i in range(0, len(addresses), batch_size):
-            batch = addresses[i:i + batch_size]
-            address_str = ",".join(batch)
-            
+        # Pool creation time
+        created_str = attr.get("pool_created_at")
+        created_at = None
+        if created_str:
             try:
-                response = await self.client.get(
-                    f"{self.BASE_URL}/latest/dex/tokens/{address_str}"
-                )
-                response.raise_for_status()
-                data = response.json()
-                
-                for pair in data.get("pairs", []):
-                    if pair.get("chainId") != "solana":
-                        continue
-                    
-                    base_token = pair.get("baseToken", {})
-                    address = base_token.get("address", "")
-                    
-                    # Keep best pair per token (highest liquidity)
-                    new_liq = float(pair.get("liquidity", {}).get("usd", 0) or 0)
-                    if address in enriched_data:
-                        existing_liq = enriched_data[address].get("liquidity_usd", 0) or 0
-                        if new_liq <= existing_liq:
-                            continue
-                    
-                    enriched_data[address] = {
-                        "name": base_token.get("name"),
-                        "symbol": base_token.get("symbol"),
-                        "market_cap_usd": pair.get("marketCap"),
-                        "liquidity_usd": new_liq if new_liq > 0 else None,
-                        "price_usd": float(pair.get("priceUsd", 0) or 0),
-                        "price_change_24h": pair.get("priceChange", {}).get("h24"),
-                        "volume_24h": pair.get("volume", {}).get("h24"),
-                        "pair_created_at": pair.get("pairCreatedAt"),
-                    }
-                
-            except Exception as e:
-                print(f"[PumpFunCollector] Error enriching batch: {e}")
-            
-            # Small delay between batches
-            if i + batch_size < len(addresses):
-                await asyncio.sleep(0.3)
+                created_at = datetime.fromisoformat(created_str.replace("Z", "+00:00"))
+            except:
+                pass
         
-        # Update tokens with enriched data
-        for token in tokens:
-            if token.token_address in enriched_data:
-                data = enriched_data[token.token_address]
-                token.name = data.get("name") or token.name or "Unknown"
-                token.symbol = data.get("symbol") or token.symbol or "???"
-                token.market_cap_usd = data.get("market_cap_usd")
-                token.liquidity_usd = data.get("liquidity_usd")
-                token.price_usd = data.get("price_usd")
-                token.price_change_24h = data.get("price_change_24h")
-                token.volume_24h = data.get("volume_24h")
-                
-                # Parse creation time if available
-                created_ms = data.get("pair_created_at")
-                if created_ms:
-                    try:
-                        token.created_at = datetime.fromtimestamp(created_ms / 1000)
-                    except:
-                        pass
+        # Check if PumpFun token (address ends with 'pump')
+        is_pumpfun = token_address.lower().endswith("pump")
         
-        print(f"[PumpFunCollector] Enriched {len(enriched_data)} tokens with market data")
-        return tokens
+        return TokenData(
+            token_address=token_address,
+            name=name,
+            symbol=name,  # GeckoTerminal uses name as symbol in pool names
+            market_cap_usd=market_cap,
+            liquidity_usd=liquidity,
+            volume_24h=volume_24h,
+            price_usd=price_usd,
+            price_change_24h=price_change_24h,
+            created_at=created_at,
+            is_pumpfun=is_pumpfun,
+        )
+    except Exception as e:
+        print(f"  [GeckoTerminal] Error parsing pool: {e}")
+        return None
+
+
+async def _fetch_token_details(client: httpx.AsyncClient, addresses: List[str]) -> Dict[str, Dict]:
+    """Fetch detailed token info including social links."""
+    details = {}
     
-    async def fetch_all(
-        self,
-        limit: int = 100,
-        pumpfun_only: bool = True,
-        min_volume: float = 0,
-        min_mcap: float = 0,
-    ) -> List[TokenData]:
-        """
-        Fetch and combine tokens from multiple sources.
+    # GeckoTerminal has a tokens endpoint
+    for addr in addresses[:50]:  # Limit batch size
+        url = f"{GECKO_BASE_URL}/networks/solana/tokens/{addr}"
+        data = await _fetch_json(client, url)
+        await asyncio.sleep(RATE_LIMIT_DELAY)
         
-        Args:
-            limit: Maximum tokens to return
-            pumpfun_only: Only return PumpFun tokens (address ends in 'pump')
-            min_volume: Minimum 24h volume filter
-            min_mcap: Minimum market cap filter
-        
-        Returns:
-            List of TokenData with market data, sorted by volume
-        """
-        await self._ensure_client()
-        
-        # Collect from multiple sources in parallel
-        latest_task = self.fetch_latest_tokens(limit)
-        boosted_task = self.fetch_boosted_tokens(limit // 2)
-        
-        latest, boosted = await asyncio.gather(latest_task, boosted_task)
-        
-        # Combine and deduplicate
-        seen_addresses: Set[str] = set()
-        all_tokens: List[TokenData] = []
-        
-        for token in boosted + latest:  # Prioritize boosted
-            if token.token_address and token.token_address not in seen_addresses:
-                seen_addresses.add(token.token_address)
-                all_tokens.append(token)
-        
-        # Filter for PumpFun if requested
-        if pumpfun_only:
-            all_tokens = [t for t in all_tokens if t.is_pumpfun]
-            print(f"[PumpFunCollector] {len(all_tokens)} PumpFun tokens after filter")
-        
-        # Enrich with market data
-        all_tokens = await self.enrich_with_market_data(all_tokens)
-        
-        # Apply volume/mcap filters
-        if min_volume > 0:
-            all_tokens = [t for t in all_tokens if (t.volume_24h or 0) >= min_volume]
-        if min_mcap > 0:
-            all_tokens = [t for t in all_tokens if (t.market_cap_usd or 0) >= min_mcap]
-        
-        # Sort by volume (most active first)
-        all_tokens.sort(key=lambda t: t.volume_24h or 0, reverse=True)
-        
-        # Remove tokens with no name (failed enrichment)
-        all_tokens = [t for t in all_tokens if t.name and t.name != "Unknown"]
-        
-        print(f"[PumpFunCollector] Returning {len(all_tokens[:limit])} tokens")
-        return all_tokens[:limit]
+        if data and "data" in data:
+            token_attr = data["data"].get("attributes", {})
+            details[addr] = {
+                "name": token_attr.get("name"),
+                "symbol": token_attr.get("symbol"),
+                "description": token_attr.get("description"),
+                "websites": token_attr.get("websites", []),
+                "twitter_handle": token_attr.get("twitter_handle"),
+            }
+    
+    return details
 
 
-# Convenience functions
 async def fetch_pumpfun_tokens(
-    limit: int = 100,
-    min_volume: float = 0,
-    min_mcap: float = 0,
+    limit: int = 500,
+    min_volume: float = 100,
     include_bonding_curve: bool = True,
+    min_market_cap: float = 0,
 ) -> List[TokenData]:
     """
-    Fetch PumpFun tokens with market data.
-    
-    This is the main entry point for the data collector.
+    Fetch PumpFun tokens from GeckoTerminal.
     
     Args:
-        limit: Maximum tokens to return
-        min_volume: Minimum 24h volume filter
-        min_mcap: Minimum market cap filter  
-        include_bonding_curve: If True, includes tokens still on bonding curve
-                              (no liquidity yet). These are the freshest tokens.
-    """
-    async with PumpFunCollector() as collector:
-        tokens = await collector.fetch_all(
-            limit=limit,
-            pumpfun_only=True,
-            min_volume=min_volume,
-            min_mcap=min_mcap,
-        )
-        
-        if not include_bonding_curve:
-            # Filter out tokens without liquidity (still on bonding curve)
-            tokens = [t for t in tokens if t.liquidity_usd and t.liquidity_usd > 0]
-        
-        return tokens
-
-
-async def fetch_all_solana_tokens(
-    limit: int = 100,
-    min_volume: float = 0,
-) -> List[TokenData]:
-    """
-    Fetch all trending Solana tokens (not just PumpFun).
-    """
-    async with PumpFunCollector() as collector:
-        return await collector.fetch_all(
-            limit=limit,
-            pumpfun_only=False,
-            min_volume=min_volume,
-        )
-
-
-async def search_category_tokens(
-    keywords: List[str],
-    limit_per_keyword: int = 20,
-) -> List[TokenData]:
-    """
-    Search for tokens matching specific category keywords.
+        limit: Maximum number of tokens to return
+        min_volume: Minimum 24h volume in USD
+        include_bonding_curve: Include tokens still on bonding curve (fresh tokens)
+        min_market_cap: Minimum market cap filter
     
-    Useful for finding tokens in emerging trends.
+    Returns:
+        List of TokenData objects
     """
-    async with PumpFunCollector() as collector:
-        all_tokens: List[TokenData] = []
-        seen_addresses: Set[str] = set()
+    print(f"[PumpFun Collector] Fetching tokens via GeckoTerminal...")
+    print(f"  limit={limit}, min_vol=${min_volume}, bonding_curve={include_bonding_curve}")
+    
+    tokens: Dict[str, TokenData] = {}  # Dedupe by address
+    
+    async with httpx.AsyncClient() as client:
+        # 1. Fetch trending pools (multiple pages)
+        print("  Fetching trending pools...")
+        for page in range(1, 6):  # 5 pages = 100 trending pools
+            url = f"{GECKO_BASE_URL}/networks/solana/trending_pools?page={page}"
+            data = await _fetch_json(client, url)
+            await asyncio.sleep(RATE_LIMIT_DELAY)
+            
+            if not data:
+                break
+                
+            pools = data.get("data", [])
+            if not pools:
+                break
+                
+            for pool in pools:
+                token = _parse_pool(pool)
+                if token and token.token_address not in tokens:
+                    # Filter PumpFun tokens
+                    if token.is_pumpfun:
+                        tokens[token.token_address] = token
+            
+            print(f"    Page {page}: found {len(pools)} pools, {len(tokens)} PumpFun tokens total")
         
-        for keyword in keywords:
-            tokens = await collector.search_tokens(keyword, limit_per_keyword)
-            for token in tokens:
-                if token.token_address not in seen_addresses:
-                    seen_addresses.add(token.token_address)
-                    all_tokens.append(token)
-            await asyncio.sleep(0.2)  # Rate limiting
+        # 2. Fetch new pools (for fresh/bonding curve tokens)
+        if include_bonding_curve:
+            print("  Fetching new pools...")
+            for page in range(1, 11):  # 10 pages = 200 new pools
+                url = f"{GECKO_BASE_URL}/networks/solana/new_pools?page={page}"
+                data = await _fetch_json(client, url)
+                await asyncio.sleep(RATE_LIMIT_DELAY)
+                
+                if not data:
+                    break
+                    
+                pools = data.get("data", [])
+                if not pools:
+                    break
+                    
+                for pool in pools:
+                    token = _parse_pool(pool)
+                    if token and token.token_address not in tokens:
+                        if token.is_pumpfun:
+                            tokens[token.token_address] = token
+                
+                print(f"    Page {page}: {len(tokens)} PumpFun tokens total")
         
-        # Enrich all at once
-        all_tokens = await collector.enrich_with_market_data(all_tokens)
-        
-        # Filter for PumpFun and sort by volume
-        all_tokens = [t for t in all_tokens if t.is_pumpfun]
-        all_tokens.sort(key=lambda t: t.volume_24h or 0, reverse=True)
-        
-        return all_tokens
+        # 3. Fetch pools by volume for established tokens
+        print("  Fetching top volume pools...")
+        for page in range(1, 6):
+            url = f"{GECKO_BASE_URL}/networks/solana/pools?page={page}&sort=h24_volume_usd_desc"
+            data = await _fetch_json(client, url)
+            await asyncio.sleep(RATE_LIMIT_DELAY)
+            
+            if not data:
+                break
+                
+            pools = data.get("data", [])
+            if not pools:
+                break
+                
+            for pool in pools:
+                token = _parse_pool(pool)
+                if token and token.token_address not in tokens:
+                    if token.is_pumpfun:
+                        tokens[token.token_address] = token
+            
+            print(f"    Page {page}: {len(tokens)} PumpFun tokens total")
+    
+    # Convert to list and filter
+    result = list(tokens.values())
+    
+    # Apply filters
+    if min_volume > 0:
+        result = [t for t in result if t.volume_24h >= min_volume]
+    
+    if min_market_cap > 0:
+        result = [t for t in result if t.market_cap_usd >= min_market_cap]
+    
+    # Sort by volume (most active first)
+    result.sort(key=lambda t: t.volume_24h, reverse=True)
+    
+    # Limit results
+    result = result[:limit]
+    
+    print(f"[PumpFun Collector] Returning {len(result)} tokens")
+    if result:
+        top = result[0]
+        print(f"  Top token: {top.name} (${top.market_cap_usd:,.0f} mcap, ${top.volume_24h:,.0f} vol)")
+    
+    return result
+
+
+# For backward compatibility
+async def fetch_tokens_from_dexscreener(*args, **kwargs) -> List[TokenData]:
+    """Deprecated: Use fetch_pumpfun_tokens instead."""
+    return await fetch_pumpfun_tokens(*args, **kwargs)

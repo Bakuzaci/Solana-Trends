@@ -264,57 +264,58 @@ ALL_KEYWORDS = list(KEYWORD_INDEX.keys())
 def categorize_token(
     name: str,
     symbol: str,
-    confidence_threshold: int = 75
+    confidence_threshold: int = 90
 ) -> Tuple[Optional[str], Optional[str], List[str]]:
     """
     Categorize a token based on its name and symbol.
 
-    Uses fuzzy string matching with rapidfuzz to find the best
-    matching category based on predefined keywords.
+    Uses EXACT matching only - fuzzy matching was too loose and caused
+    wrong categorizations (e.g., "TULSA" matching "tweet" -> Birds).
 
     Args:
         name: Token name
         symbol: Token symbol
-        confidence_threshold: Minimum confidence score (0-100) for a match.
-                            Default is 75.
+        confidence_threshold: Unused, kept for API compatibility.
 
     Returns:
         Tuple of (primary_category, sub_category, detected_keywords)
-        Returns (None, None, []) if no match found above threshold.
+        Returns (None, None, []) if no match found.
     """
-    # Combine name and symbol for matching
+    # Clean and tokenize the name/symbol
     combined_text = f"{name} {symbol}".lower()
-
-    # Track all matches with their scores
+    
+    # Remove common noise
+    noise_words = {'token', 'coin', 'sol', 'solana', 'the', 'of', 'a', 'an'}
+    
+    # Extract words (alphanumeric only)
+    import re
+    words = set(re.findall(r'[a-z0-9]+', combined_text))
+    words = words - noise_words
+    
+    # Track matches with priority (longer keyword matches = better)
     detected_keywords = []
-    best_match: Optional[Tuple[str, str, int]] = None
+    best_match: Optional[Tuple[str, str, int]] = None  # (primary, sub, keyword_length)
 
-    # First, try exact substring matching
+    # ONLY exact matching - no fuzzy
     for keyword, (primary_cat, sub_cat) in KEYWORD_INDEX.items():
-        if keyword in combined_text:
+        keyword_lower = keyword.lower()
+        
+        # Method 1: Exact word match (highest priority)
+        if keyword_lower in words:
             detected_keywords.append(keyword)
-            # Exact matches get 100 confidence
-            if best_match is None or 100 > best_match[2]:
-                best_match = (primary_cat, sub_cat, 100)
+            # Prefer longer keywords (more specific)
+            if best_match is None or len(keyword) > best_match[2]:
+                best_match = (primary_cat, sub_cat, len(keyword))
+            continue
+        
+        # Method 2: Substring match only for keywords >= 4 chars
+        # This catches things like "dogwifhat" containing "dog"
+        if len(keyword) >= 4 and keyword_lower in combined_text:
+            detected_keywords.append(keyword)
+            if best_match is None or len(keyword) > best_match[2]:
+                best_match = (primary_cat, sub_cat, len(keyword))
 
-    # If no exact matches, try fuzzy matching
-    if not detected_keywords:
-        # Use rapidfuzz to find similar keywords
-        matches = process.extract(
-            combined_text,
-            ALL_KEYWORDS,
-            scorer=fuzz.partial_ratio,
-            limit=5,
-        )
-
-        for match_keyword, score, _ in matches:
-            if score >= confidence_threshold:
-                detected_keywords.append(match_keyword)
-                primary_cat, sub_cat = KEYWORD_INDEX[match_keyword]
-                if best_match is None or score > best_match[2]:
-                    best_match = (primary_cat, sub_cat, score)
-
-    if best_match and best_match[2] >= confidence_threshold:
+    if best_match:
         return best_match[0], best_match[1], detected_keywords
 
     return None, None, detected_keywords
