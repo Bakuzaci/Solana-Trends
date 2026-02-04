@@ -15,7 +15,7 @@ from .acceleration import (
 )
 
 from .data_collector import (
-    TokenData,
+    TokenData as LegacyTokenData,
     MoralisClient,
     default_client,
     fetch_new_tokens,
@@ -23,11 +23,8 @@ from .data_collector import (
 )
 
 from .pumpfun_collector import (
-    TokenData as PumpFunTokenData,
-    PumpFunCollector,
+    TokenData,
     fetch_pumpfun_tokens,
-    fetch_all_solana_tokens,
-    search_category_tokens,
 )
 
 from .breakout_detector import (
@@ -51,17 +48,14 @@ __all__ = [
     "is_breakout_meta",
     "get_acceleration_tier",
     # Data Collector (legacy)
-    "TokenData",
+    "LegacyTokenData",
     "MoralisClient",
     "default_client",
     "fetch_new_tokens",
     "fetch_token_prices",
     # PumpFun Collector (preferred)
-    "PumpFunTokenData",
-    "PumpFunCollector",
+    "TokenData",
     "fetch_pumpfun_tokens",
-    "fetch_all_solana_tokens",
-    "search_category_tokens",
     # Breakout Detector
     "BreakoutCluster",
     "TokenInfo",
