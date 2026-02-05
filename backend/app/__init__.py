@@ -1,1 +1,0 @@
-# TrendRadar.Sol Backend API
