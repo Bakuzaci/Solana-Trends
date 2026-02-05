@@ -163,9 +163,11 @@ async def snapshot_job():
             print(f"[{datetime.utcnow()}] Snapshot job completed successfully")
 
         except Exception as e:
-            print(f"Error in snapshot job: {e}")
+            import traceback
+            print(f"ERROR in snapshot job: {e}")
+            traceback.print_exc()
             await session.rollback()
-            raise
+            # Don't raise - let scheduler continue running other jobs
 
 
 async def _update_existing_token_prices(session):
@@ -677,36 +679,38 @@ async def start_scheduler() -> AsyncIOScheduler:
 
     # Schedule initial jobs to run after a short delay (non-blocking)
     # This allows the app to start responding to health checks quickly
-    initial_run_time = datetime.now() + timedelta(seconds=10)
+    initial_run_time = datetime.now() + timedelta(seconds=5)
     print(f"Scheduling initial data collection to run at {initial_run_time}...")
 
-    # Run web discovery first to populate token cache
-    scheduler.add_job(
-        web_discovery_job,
-        trigger="date",
-        run_date=initial_run_time,
-        id="initial_web_discovery_job",
-        name="Initial web token discovery",
-        replace_existing=True,
-        misfire_grace_time=300,
-    )
-
-    # Then run snapshot and aggregation
+    # Run snapshot FIRST (CoinGecko data - this is the main source now)
     scheduler.add_job(
         snapshot_job,
         trigger="date",
-        run_date=initial_run_time + timedelta(seconds=5),
+        run_date=initial_run_time,
         id="initial_snapshot_job",
-        name="Initial snapshot fetch",
+        name="Initial snapshot fetch (CoinGecko)",
         replace_existing=True,
         misfire_grace_time=300,
     )
+    
+    # Then run aggregation
     scheduler.add_job(
         aggregate_job,
         trigger="date",
-        run_date=initial_run_time + timedelta(seconds=10),
+        run_date=initial_run_time + timedelta(seconds=30),
         id="initial_aggregate_job",
         name="Initial aggregation",
+        replace_existing=True,
+        misfire_grace_time=300,
+    )
+    
+    # Web discovery runs later (backup/supplementary)
+    scheduler.add_job(
+        web_discovery_job,
+        trigger="date",
+        run_date=initial_run_time + timedelta(minutes=2),
+        id="initial_web_discovery_job",
+        name="Initial web token discovery",
         replace_existing=True,
         misfire_grace_time=300,
     )
